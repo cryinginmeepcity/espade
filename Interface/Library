@@ -2002,7 +2002,7 @@ function Window:SelectPage(page, instant, fromBack)
 	local theme = self.Theme
 	local old = self.ActivePage
 	if old and not fromBack then
-		table.insert(self._history, old)
+		table.insert(self._history, { Page = old, Restore = old.Restore })
 		if #self._history > 40 then
 			table.remove(self._history, 1)
 		end
@@ -2029,9 +2029,13 @@ end
 
 function Window:Back()
 	while #self._history > 0 do
-		local page = table.remove(self._history)
-		if page ~= self.ActivePage then
-			self:SelectPage(page, false, true)
+		local entry = table.remove(self._history)
+		if entry.Page ~= self.ActivePage then
+			self:SelectPage(entry.Page, false, true)
+			entry.Page.Restore = entry.Restore
+			if entry.Restore then
+				fire(entry.Restore)
+			end
 			return true
 		end
 	end
@@ -3001,6 +3005,83 @@ function Page:Field(opts)
 
 	if not self.FocusTarget then
 		self.FocusTarget = obj
+	end
+	return finish(obj, holder)
+end
+
+function Page:TextArea(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local maxLength = opts.MaxLength or 1000
+	local height = opts.Height or 132
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, height),
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+	})
+	local frame, focus = field(theme, holder, opts, height, 16)
+	local box = label(theme, {
+		Class = "TextBox",
+		Text = "",
+		PlaceholderText = opts.Placeholder or "",
+		ClearTextOnFocus = false,
+		MultiLine = true,
+		TextWrapped = true,
+		TextSize = 15,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextTruncate = Enum.TextTruncate.None,
+		Position = UDim2.fromOffset(16, 14),
+		Size = UDim2.new(1, -32, 1, -40),
+		ClipsDescendants = true,
+		Parent = frame,
+	})
+	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+	local counter = label(theme, {
+		Text = "0 / " .. maxLength,
+		TextSize = 12,
+		Color = "Muted",
+		TextXAlignment = Enum.TextXAlignment.Right,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -14, 1, -8),
+		Size = UDim2.fromOffset(120, 16),
+		Parent = frame,
+	})
+	local trimming = false
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		if trimming then
+			return
+		end
+		local length = utf8.len(box.Text) or #box.Text
+		if length > maxLength then
+			trimming = true
+			local cut = utf8.offset(box.Text, maxLength + 1)
+			box.Text = cut and box.Text:sub(1, cut - 1) or box.Text:sub(1, maxLength)
+			trimming = false
+			length = maxLength
+		end
+		counter.Text = length .. " / " .. maxLength
+		theme:Set(counter, "TextColor3", length >= maxLength and "Warning" or "Muted")
+	end)
+	box.Focused:Connect(function()
+		focusStyle(theme, focus, true)
+	end)
+	box.FocusLost:Connect(function()
+		focusStyle(theme, focus, false)
+	end)
+
+	local obj = { Box = box }
+	function obj:GetText()
+		return box.Text
+	end
+	function obj:SetText(value)
+		box.Text = tostring(value or "")
+	end
+	function obj:Focus()
+		box:CaptureFocus()
+	end
+	function obj:SetEditable(value)
+		box.TextEditable = value
 	end
 	return finish(obj, holder)
 end
