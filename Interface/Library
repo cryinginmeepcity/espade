@@ -1,0 +1,3940 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
+local GuiService = game:GetService("GuiService")
+
+local Isle = { Version = "3.0.0" }
+
+local FONT = "rbxasset://fonts/families/BuilderSans.json"
+local Fonts = {
+	Regular = Font.new(FONT, Enum.FontWeight.Regular),
+	Medium = Font.new(FONT, Enum.FontWeight.Medium),
+	SemiBold = Font.new(FONT, Enum.FontWeight.SemiBold),
+	Bold = Font.new(FONT, Enum.FontWeight.Bold),
+}
+Isle.Fonts = Fonts
+
+local Ease = {
+	Quick = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	Hover = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+	Smooth = TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	Slow = TweenInfo.new(0.9, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	Theme = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+	Pulse = TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+}
+
+local WHITE = Color3.new(1, 1, 1)
+local BLACK = Color3.new(0, 0, 0)
+
+local Themes = {
+	Dark = {
+		Background = Color3.fromRGB(22, 22, 24),
+		Shade = 0.48,
+		Elevated = Color3.fromRGB(20, 20, 22),
+		GroupColor = WHITE,
+		GroupT = 0.972,
+		FieldColor = WHITE,
+		FieldT = 0.952,
+		HoverColor = WHITE,
+		HoverT = 0.966,
+		LineColor = WHITE,
+		LineT = 0.94,
+		StrokeColor = WHITE,
+		StrokeT = 0.9,
+		FocusT = 0.78,
+		Text = Color3.fromRGB(246, 246, 248),
+		SubText = Color3.fromRGB(150, 150, 158),
+		Muted = Color3.fromRGB(98, 98, 106),
+		Primary = Color3.fromRGB(246, 246, 248),
+		PrimaryText = Color3.fromRGB(12, 12, 14),
+		IndicatorColor = WHITE,
+		IndicatorT = 0.9,
+		NavColor = WHITE,
+		NavT = 0.9,
+		TrackColor = WHITE,
+		TrackT = 0.86,
+		Knob = WHITE,
+		Shadow = BLACK,
+		ShadowT = 0.25,
+		Dot = WHITE,
+		DotAccent = Color3.fromRGB(215, 222, 255),
+		DotBase = 0.86,
+		DotLit = 0.5,
+		Spot = 0.95,
+		EdgeLight = 0.55,
+		EdgeHover = 0.08,
+		HandleColor = WHITE,
+		HandleT = 0.78,
+		Accent = Color3.fromRGB(215, 222, 255),
+		Danger = Color3.fromRGB(255, 105, 105),
+		Safe = Color3.fromRGB(80, 225, 150),
+		Warning = Color3.fromRGB(255, 196, 100),
+		Opaque = 0,
+	},
+	Light = {
+		Background = Color3.fromRGB(255, 255, 255),
+		Shade = 0.965,
+		Elevated = Color3.fromRGB(255, 255, 255),
+		GroupColor = BLACK,
+		GroupT = 0.968,
+		FieldColor = BLACK,
+		FieldT = 0.955,
+		HoverColor = BLACK,
+		HoverT = 0.97,
+		LineColor = BLACK,
+		LineT = 0.93,
+		StrokeColor = BLACK,
+		StrokeT = 0.9,
+		FocusT = 0.75,
+		Text = Color3.fromRGB(14, 14, 16),
+		SubText = Color3.fromRGB(102, 102, 112),
+		Muted = Color3.fromRGB(158, 158, 166),
+		Primary = Color3.fromRGB(14, 14, 16),
+		PrimaryText = Color3.fromRGB(255, 255, 255),
+		IndicatorColor = WHITE,
+		IndicatorT = 0,
+		NavColor = BLACK,
+		NavT = 0.94,
+		TrackColor = BLACK,
+		TrackT = 0.88,
+		Knob = WHITE,
+		Shadow = Color3.fromRGB(20, 20, 40),
+		ShadowT = 0.82,
+		Dot = BLACK,
+		DotAccent = Color3.fromRGB(80, 92, 255),
+		DotBase = 0.88,
+		DotLit = 0.62,
+		Spot = 0.93,
+		EdgeLight = 1,
+		EdgeHover = 1,
+		HandleColor = BLACK,
+		HandleT = 0.82,
+		Accent = Color3.fromRGB(80, 92, 255),
+		Danger = Color3.fromRGB(220, 55, 55),
+		Safe = Color3.fromRGB(20, 160, 90),
+		Warning = Color3.fromRGB(210, 140, 20),
+		Opaque = 0,
+	},
+}
+Isle.Themes = Themes
+
+local NAV_H = 40
+local NAV_GAP = 12
+local HEADER = 56
+local HANDLE_GAP = 12
+local HANDLE_H = 5
+local RADIUS = 22
+
+local function tween(obj, info, goal)
+	local t = TweenService:Create(obj, info, goal)
+	t:Play()
+	return t
+end
+
+local function create(class, props)
+	local inst = Instance.new(class)
+	local parent
+	for key, value in pairs(props or {}) do
+		if type(key) == "number" then
+			value.Parent = inst
+		elseif key == "Parent" then
+			parent = value
+		else
+			inst[key] = value
+		end
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+local function corner(radius)
+	return create("UICorner", { CornerRadius = UDim.new(0, radius) })
+end
+
+local function round()
+	return create("UICorner", { CornerRadius = UDim.new(1, 0) })
+end
+
+local function pad(t, r, b, l)
+	return create("UIPadding", {
+		PaddingTop = UDim.new(0, t),
+		PaddingRight = UDim.new(0, r or t),
+		PaddingBottom = UDim.new(0, b or t),
+		PaddingLeft = UDim.new(0, l or r or t),
+	})
+end
+
+local function list(props)
+	props = props or {}
+	props.SortOrder = Enum.SortOrder.LayoutOrder
+	return create("UIListLayout", props)
+end
+
+local function smooth(x)
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+local function damp(rate, dt)
+	return 1 - math.exp(-rate * dt)
+end
+
+local function commas(n)
+	local s = tostring(math.floor(n))
+	local formatted = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return (formatted:gsub("^,", ""))
+end
+Isle.Format = commas
+
+local function isPress(input)
+	local t = input.UserInputType
+	return t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch
+end
+
+local function isMove(input)
+	local t = input.UserInputType
+	return t == Enum.UserInputType.MouseMovement or t == Enum.UserInputType.Touch
+end
+
+local function fire(fn, ...)
+	if type(fn) ~= "function" then
+		return
+	end
+	local args = table.pack(...)
+	task.spawn(function()
+		local ok, err = pcall(fn, table.unpack(args, 1, args.n))
+		if not ok then
+			warn("[Isle] " .. tostring(err))
+		end
+	end)
+end
+
+local function newShadow(parent, props)
+	local ok, inst = pcall(Instance.new, "UIShadow")
+	if not ok then
+		return nil
+	end
+	for key, value in pairs(props) do
+		pcall(function()
+			inst[key] = value
+		end)
+	end
+	inst.Parent = parent
+	return inst
+end
+
+local function mount(gui)
+	local ok = false
+	if type(gethui) == "function" then
+		ok = pcall(function()
+			gui.Parent = gethui()
+		end)
+	end
+	if not ok then
+		ok = pcall(function()
+			gui.Parent = game:GetService("CoreGui")
+		end)
+	end
+	if not ok or not gui.Parent then
+		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	end
+end
+
+local function textWidth(value, font, size)
+	local params = Instance.new("GetTextBoundsParams")
+	params.Text = value
+	params.Font = font
+	params.Size = size
+	params.Width = 10000
+	local ok, bounds = pcall(TextService.GetTextBoundsAsync, TextService, params)
+	if ok and bounds then
+		return bounds.X
+	end
+	return #value * size * 0.5
+end
+
+local Theme = {}
+Theme.__index = Theme
+
+function Theme.new(name)
+	return setmetatable({ Name = name, Registry = {}, Listeners = {} }, Theme)
+end
+
+function Theme:Get(key)
+	return Themes[self.Name][key]
+end
+
+function Theme:Bind(inst, map)
+	local entry = self.Registry[inst]
+	if not entry then
+		entry = {}
+		self.Registry[inst] = entry
+	end
+	for prop, key in pairs(map) do
+		entry[prop] = key
+		inst[prop] = self:Get(key)
+	end
+	return inst
+end
+
+function Theme:Set(inst, prop, key, info)
+	local entry = self.Registry[inst]
+	if not entry then
+		entry = {}
+		self.Registry[inst] = entry
+	end
+	entry[prop] = key
+	if info then
+		tween(inst, info, { [prop] = self:Get(key) })
+	else
+		inst[prop] = self:Get(key)
+	end
+end
+
+function Theme:Unbind(inst, prop)
+	local entry = self.Registry[inst]
+	if entry then
+		entry[prop] = nil
+	end
+end
+
+function Theme:Apply(animated)
+	for inst, entry in pairs(self.Registry) do
+		if inst.Parent == nil then
+			self.Registry[inst] = nil
+		else
+			local goal = {}
+			for prop, key in pairs(entry) do
+				goal[prop] = self:Get(key)
+			end
+			if animated then
+				tween(inst, Ease.Theme, goal)
+			else
+				for prop, value in pairs(goal) do
+					inst[prop] = value
+				end
+			end
+		end
+	end
+	for _, fn in ipairs(self.Listeners) do
+		fn(animated)
+	end
+end
+
+function Theme:OnChanged(fn)
+	table.insert(self.Listeners, fn)
+end
+
+local function label(theme, props)
+	local colorKey = props.Color or "Text"
+	local class = props.Class or "TextLabel"
+	props.Color = nil
+	props.Class = nil
+	local defaults = {
+		BackgroundTransparency = 1,
+		FontFace = Fonts.Regular,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}
+	for key, value in pairs(defaults) do
+		if props[key] == nil then
+			props[key] = value
+		end
+	end
+	local inst = create(class, props)
+	theme:Bind(inst, { TextColor3 = colorKey })
+	return inst
+end
+
+local function bar(theme, parent, colorKey, position, size, rotation)
+	local b = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = position,
+		Size = size,
+		Rotation = rotation or 0,
+		BorderSizePixel = 0,
+		Parent = parent,
+		round(),
+	})
+	theme:Bind(b, { BackgroundColor3 = colorKey })
+	return b
+end
+
+local function iconBox(parent, size, props)
+	local box = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(size, size) })
+	for key, value in pairs(props or {}) do
+		box[key] = value
+	end
+	box.Parent = parent
+	return box
+end
+
+local function chevron(theme, parent, colorKey, props)
+	local box = iconBox(parent, 10, props)
+	bar(theme, box, colorKey, UDim2.fromOffset(5, 3), UDim2.fromOffset(6, 1.5), 45)
+	bar(theme, box, colorKey, UDim2.fromOffset(5, 7), UDim2.fromOffset(6, 1.5), -45)
+	return box
+end
+
+local function crossIcon(theme, parent, colorKey, size, props)
+	local box = iconBox(parent, size, props)
+	bar(theme, box, colorKey, UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(size, 1.5), 45)
+	bar(theme, box, colorKey, UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(size, 1.5), -45)
+	return box
+end
+
+local function hairline(theme, parent, inset)
+	local line = create("Frame", {
+		Position = UDim2.fromOffset(inset, 0),
+		Size = UDim2.new(1, -inset * 2, 0, 1),
+		BorderSizePixel = 0,
+		ZIndex = 2,
+		Parent = parent,
+	})
+	theme:Bind(line, { BackgroundColor3 = "LineColor", BackgroundTransparency = "LineT" })
+	return line
+end
+
+local function maskBox(theme, box)
+	box.TextTransparency = 1
+	local mask = label(theme, {
+		Text = "",
+		TextSize = box.TextSize,
+		FontFace = box.FontFace,
+		TextXAlignment = box.TextXAlignment,
+		TextTruncate = Enum.TextTruncate.None,
+		Size = UDim2.fromScale(1, 1),
+		ClipsDescendants = true,
+		Parent = box,
+	})
+	local function update()
+		if box.Text == "" then
+			mask.Text = box.PlaceholderText
+			theme:Set(mask, "TextColor3", "Muted")
+		else
+			mask.Text = string.rep("•", utf8.len(box.Text) or #box.Text)
+			theme:Set(mask, "TextColor3", "Text")
+		end
+	end
+	box:GetPropertyChangedSignal("Text"):Connect(update)
+	box:GetPropertyChangedSignal("PlaceholderText"):Connect(update)
+	update()
+	return mask
+end
+
+local function eyeButton(theme, parent, props)
+	local btn = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(28, 28),
+		ZIndex = 3,
+		Parent = parent,
+		round(),
+	})
+	for key, value in pairs(props or {}) do
+		btn[key] = value
+	end
+	theme:Bind(btn, { BackgroundColor3 = "HoverColor" })
+	local lid = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(15, 9),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+		Parent = btn,
+		round(),
+	})
+	local lidStroke = create("UIStroke", { Thickness = 1.5, Parent = lid })
+	theme:Bind(lidStroke, { Color = "Muted" })
+	local pupil = bar(theme, btn, "Muted", UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(4, 4), 0)
+	local slash = bar(theme, btn, "Muted", UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(19, 1.5), -38)
+	pupil.ZIndex = 3
+	slash.ZIndex = 4
+	local parts = { { lidStroke, "Color" }, { pupil, "BackgroundColor3" }, { slash, "BackgroundColor3" } }
+	btn.MouseEnter:Connect(function()
+		tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") - 0.02 })
+		for _, part in ipairs(parts) do
+			theme:Set(part[1], part[2], "Text", Ease.Hover)
+		end
+	end)
+	btn.MouseLeave:Connect(function()
+		tween(btn, Ease.Hover, { BackgroundTransparency = 1 })
+		for _, part in ipairs(parts) do
+			theme:Set(part[1], part[2], "Muted", Ease.Hover)
+		end
+	end)
+	return btn, slash
+end
+
+local function secretControl(theme, box, holder, rightOffset)
+	local control = { Hidden = true }
+	local mask = maskBox(theme, box)
+	local eye, slash = eyeButton(theme, holder, {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -rightOffset, 0.5, 0),
+	})
+	local function apply()
+		mask.Visible = control.Hidden
+		box.TextTransparency = control.Hidden and 1 or 0
+		slash.Visible = not control.Hidden
+	end
+	eye.MouseButton1Click:Connect(function()
+		control.Hidden = not control.Hidden
+		apply()
+	end)
+	function control:Hide()
+		self.Hidden = true
+		apply()
+	end
+	function control:Destroy()
+		mask:Destroy()
+		eye:Destroy()
+		box.TextTransparency = 0
+	end
+	apply()
+	return control
+end
+
+local KEY_NAMES = {
+	RightControl = "Right Ctrl",
+	LeftControl = "Left Ctrl",
+	RightShift = "Right Shift",
+	LeftShift = "Left Shift",
+	RightAlt = "Right Alt",
+	LeftAlt = "Left Alt",
+}
+
+local function keyName(key)
+	if not key then
+		return "None"
+	end
+	return KEY_NAMES[key.Name] or (key.Name:gsub("(%l)(%u)", "%1 %2"))
+end
+Isle.KeyName = keyName
+
+local DIGITS = {
+	[Enum.KeyCode.One] = 1,
+	[Enum.KeyCode.Two] = 2,
+	[Enum.KeyCode.Three] = 3,
+	[Enum.KeyCode.Four] = 4,
+	[Enum.KeyCode.Five] = 5,
+	[Enum.KeyCode.Six] = 6,
+	[Enum.KeyCode.Seven] = 7,
+	[Enum.KeyCode.Eight] = 8,
+	[Enum.KeyCode.Nine] = 9,
+}
+
+local function newDots(theme, parent, width, maxHeight)
+	local GAP = 22
+	local SIZE = 2
+	local REACH = 150
+	local WARP = 5
+	local EDGE = 0.18
+
+	local canvas = create("CanvasGroup", {
+		Name = "Dots",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 2,
+		Parent = parent,
+		corner(RADIUS),
+	})
+	local spot = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(30, 30),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 1,
+		Parent = canvas,
+		round(),
+	})
+	local spotShadow = newShadow(spot, { BlurRadius = UDim.new(0, 260), ShowBehindParent = true, Transparency = 1 })
+	local layer = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 2, Parent = canvas })
+
+	local function snapshot()
+		return {
+			Dot = theme:Get("Dot"),
+			Accent = theme:Get("DotAccent"),
+			Base = theme:Get("DotBase"),
+			Lit = theme:Get("DotLit"),
+			Spot = theme:Get("Spot"),
+		}
+	end
+
+	local colors = snapshot()
+	local height = 100
+	local cols = math.max(2, math.floor(width / GAP))
+	local startX = (width - (cols - 1) * GAP) / 2
+	local rows = 0
+	local grid = {}
+	local all = {}
+
+	for c = 1, cols do
+		grid[c] = {}
+		local x = startX + (c - 1) * GAP
+		local r = 1
+		local y = startX
+		while y < maxHeight do
+			local frame = create("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromOffset(x, y),
+				Size = UDim2.fromOffset(SIZE, SIZE),
+				BorderSizePixel = 0,
+				BackgroundColor3 = colors.Dot,
+				BackgroundTransparency = 1,
+				Parent = layer,
+			})
+			local dot = { Frame = frame, X = x, Y = y, Base = 1 }
+			grid[c][r] = dot
+			table.insert(all, dot)
+			rows = math.max(rows, r)
+			r += 1
+			y += GAP
+		end
+	end
+
+	local function edgeFactor(pos, length)
+		local fade = EDGE * length
+		if fade <= 0 then
+			return 1
+		end
+		return smooth(math.min(pos, length - pos) / fade)
+	end
+
+	local dirty = true
+	local lit = {}
+	local from, to, progress = nil, nil, 1
+	theme:OnChanged(function(animated)
+		if animated then
+			from, to, progress = table.clone(colors), snapshot(), 0
+		else
+			colors = snapshot()
+			dirty = true
+		end
+	end)
+
+	local enabled = true
+	local intensity = 0
+	local smoothPos = Vector2.zero
+	local api = { Canvas = canvas }
+
+	function api.SetHeight(h)
+		if math.abs(h - height) > 0.25 then
+			height = h
+			dirty = true
+		end
+	end
+
+	function api.SetEnabled(value)
+		enabled = value
+	end
+
+	function api.Step(dt, mouse, hovering)
+		if progress < 1 then
+			progress = math.min(1, progress + dt / 0.6)
+			local a = smooth(progress)
+			colors.Dot = from.Dot:Lerp(to.Dot, a)
+			colors.Accent = from.Accent:Lerp(to.Accent, a)
+			colors.Base = from.Base + (to.Base - from.Base) * a
+			colors.Lit = from.Lit + (to.Lit - from.Lit) * a
+			colors.Spot = from.Spot + (to.Spot - from.Spot) * a
+			dirty = true
+		end
+
+		local inside = enabled and hovering and mouse.X >= 0 and mouse.Y >= 0 and mouse.X <= width and mouse.Y <= height
+		intensity += ((inside and 1 or 0) - intensity) * damp(inside and 6 or 4, dt)
+		if intensity < 0.01 then
+			smoothPos = mouse
+		else
+			smoothPos = smoothPos:Lerp(mouse, damp(12, dt))
+		end
+
+		if dirty then
+			dirty = false
+			for _, dot in ipairs(all) do
+				dot.Base = 1 - (1 - colors.Base) * edgeFactor(dot.X, width) * edgeFactor(dot.Y, height)
+				if not lit[dot] then
+					dot.Frame.BackgroundTransparency = dot.Base
+					dot.Frame.BackgroundColor3 = colors.Dot
+				end
+			end
+		end
+
+		local active = intensity > 0.005
+		spot.Visible = active and spotShadow ~= nil
+		if active and spotShadow then
+			spot.Position = UDim2.fromOffset(smoothPos.X, smoothPos.Y)
+			spotShadow.Color = colors.Accent
+			spotShadow.Transparency = 1 - (1 - colors.Spot) * intensity
+		end
+
+		local nowLit = {}
+		if active then
+			local c0 = math.max(1, math.floor((smoothPos.X - REACH - startX) / GAP) + 1)
+			local c1 = math.min(cols, math.ceil((smoothPos.X + REACH - startX) / GAP) + 1)
+			local r0 = math.max(1, math.floor((smoothPos.Y - REACH - startX) / GAP) + 1)
+			local r1 = math.min(rows, math.ceil((smoothPos.Y + REACH - startX) / GAP) + 1)
+			for c = c0, c1 do
+				local column = grid[c]
+				for r = r0, r1 do
+					local dot = column and column[r]
+					if dot then
+						local dx, dy = dot.X - smoothPos.X, dot.Y - smoothPos.Y
+						local dist = math.sqrt(dx * dx + dy * dy)
+						if dist < REACH then
+							local shape = smooth(1 - dist / REACH)
+							local power = shape * intensity
+							local push = dist > 0.5 and WARP * shape * shape * intensity / dist or 0
+							local frame = dot.Frame
+							frame.BackgroundTransparency = dot.Base + (colors.Lit - dot.Base) * power
+							frame.BackgroundColor3 = colors.Dot:Lerp(colors.Accent, shape)
+							frame.Position = UDim2.fromOffset(dot.X + dx * push, dot.Y + dy * push)
+							local s = SIZE + power * 0.6
+							frame.Size = UDim2.fromOffset(s, s)
+							nowLit[dot] = true
+						end
+					end
+				end
+			end
+		end
+
+		for dot in pairs(lit) do
+			if not nowLit[dot] then
+				local frame = dot.Frame
+				frame.BackgroundTransparency = dot.Base
+				frame.BackgroundColor3 = colors.Dot
+				frame.Position = UDim2.fromOffset(dot.X, dot.Y)
+				frame.Size = UDim2.fromOffset(SIZE, SIZE)
+			end
+		end
+		lit = nowLit
+	end
+
+	return api
+end
+
+local function newEdgeLights(theme, card)
+	local parts = {}
+	for _, side in ipairs({ 0, 1 }) do
+		local light = create("Frame", {
+			Name = "EdgeLight",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(side, 0.5),
+			Size = UDim2.new(0, 1.5, 0.46, 0),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ZIndex = 30,
+			Parent = card,
+			create("UIGradient", {
+				Rotation = 90,
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 1),
+					NumberSequenceKeypoint.new(0.5, 0),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+			}),
+		})
+		local glow = newShadow(light, {
+			Color = WHITE,
+			BlurRadius = UDim.new(0, 16),
+			Spread = UDim2.fromOffset(1, 0),
+			ShowBehindParent = true,
+			Transparency = 1,
+		})
+		table.insert(parts, { Light = light, Glow = glow })
+	end
+	return function(level)
+		for _, part in ipairs(parts) do
+			part.Light.BackgroundTransparency = level
+			if part.Glow then
+				part.Glow.Transparency = 0.35 + 0.65 * level
+			end
+		end
+	end
+end
+
+local Window = {}
+Window.__index = Window
+
+local Page = {}
+Page.__index = Page
+
+local Section = {}
+Section.__index = Section
+
+function Isle.new(options)
+	options = options or {}
+	local theme = Theme.new(Themes[options.Theme] and options.Theme or "Dark")
+	local W = options.Width or 520
+	local minHeight = options.MinHeight or 220
+
+	local window = setmetatable({
+		Theme = theme,
+		Width = W,
+		MinHeight = minHeight,
+		MaxHeight = options.MaxHeight or 600,
+		ToggleKey = options.ToggleKey or Enum.KeyCode.RightControl,
+		Pages = {},
+		Visible = true,
+		_vis = 0,
+		_height = minHeight,
+		_edge = 1,
+		UserScale = math.clamp(options.Scale or 1.2, 0.8, 1.6),
+		MinScale = 0.8,
+		MaxScale = 1.6,
+		_connections = {},
+		_toasts = {},
+		_history = {},
+		_backShown = false,
+	}, Window)
+
+	local gui = create("ScreenGui", {
+		Name = "Isle",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = options.DisplayOrder or 100,
+	})
+	window.Gui = gui
+
+	local function pointer()
+		local mouse = UserInputService:GetMouseLocation()
+		if not gui.IgnoreGuiInset then
+			mouse -= GuiService:GetGuiInset()
+		end
+		return mouse
+	end
+
+	window._pointer = pointer
+
+	local function totalHeight(h)
+		return NAV_H + NAV_GAP + h + HANDLE_GAP + HANDLE_H + 10
+	end
+
+	local root = create("Frame", {
+		Name = "Root",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0.5, -260),
+		Size = UDim2.fromOffset(W, totalHeight(minHeight)),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	local scale = create("UIScale", { Scale = 0.97, Parent = root })
+	window.Root = root
+	window.Scale = scale
+
+	local navBack = create("Frame", {
+		Name = "NavBack",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0),
+		Size = UDim2.fromOffset(100, NAV_H),
+		BackgroundTransparency = 1,
+		Parent = root,
+		round(),
+	})
+	theme:Bind(navBack, { BackgroundColor3 = "Elevated" })
+	local navStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = navBack })
+	theme:Bind(navStroke, { Color = "StrokeColor" })
+	local navShadow = newShadow(navBack, {
+		BlurRadius = UDim.new(0, 24),
+		Offset = UDim2.fromOffset(0, 6),
+		Transparency = 1,
+		ShowBehindParent = false,
+	})
+	if navShadow then
+		theme:Bind(navShadow, { Color = "Shadow" })
+	end
+	local nav = create("CanvasGroup", {
+		Name = "Nav",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0),
+		Size = UDim2.fromOffset(0, NAV_H),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		GroupTransparency = 1,
+		Parent = root,
+		round(),
+	})
+	local navIndicator = create("Frame", { ZIndex = 1, Parent = nav, round() })
+	theme:Bind(navIndicator, { BackgroundColor3 = "NavColor", BackgroundTransparency = "NavT" })
+	local navItems = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		ZIndex = 2,
+		Parent = nav,
+		pad(4),
+		list({
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 2),
+		}),
+	})
+	window.NavItems = navItems
+
+	local card = create("Frame", {
+		Name = "Card",
+		Position = UDim2.fromOffset(0, NAV_H + NAV_GAP),
+		Size = UDim2.fromOffset(W, minHeight),
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+	window.Card = card
+
+	local fill = create("Frame", {
+		Name = "Fill",
+		Size = UDim2.fromScale(1, 1),
+		BorderSizePixel = 0,
+		BackgroundTransparency = 1,
+		ZIndex = 1,
+		Parent = card,
+		corner(RADIUS),
+	})
+	theme:Bind(fill, { BackgroundColor3 = "Background" })
+	local fillGradient = create("UIGradient", { Rotation = 90, Parent = fill })
+	local shade = theme:Get("Shade")
+	local function setShade(value)
+		shade = value
+		fillGradient.Color = ColorSequence.new(WHITE, Color3.new(value, value, value))
+	end
+	setShade(shade)
+	local cardShadow = newShadow(fill, {
+		BlurRadius = UDim.new(0, 70),
+		Spread = UDim2.fromOffset(4, 10),
+		Offset = UDim2.fromOffset(0, 24),
+		Transparency = 1,
+		ShowBehindParent = false,
+	})
+	if cardShadow then
+		theme:Bind(cardShadow, { Color = "Shadow" })
+	end
+
+	local dots
+	if options.Grid ~= false then
+		dots = newDots(theme, card, W, window.MaxHeight)
+		window.Dots = dots
+	end
+
+	local rim = create("Frame", {
+		Name = "Rim",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 20,
+		Parent = card,
+		corner(RADIUS),
+	})
+	local rimStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 0, Parent = rim })
+	theme:Bind(rimStroke, { Color = "StrokeColor" })
+	local rimGradient = create("UIGradient", { Rotation = 90, Parent = rimStroke })
+	local function setRim(alpha)
+		local t = theme:Get("StrokeT")
+		local top = 1 - (1 - math.max(t - 0.12, 0)) * alpha
+		local mid = 1 - (1 - t) * alpha
+		local low = 1 - (1 - math.min(t + 0.04, 1)) * alpha
+		rimGradient.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, top),
+			NumberSequenceKeypoint.new(0.25, mid),
+			NumberSequenceKeypoint.new(1, low),
+		})
+	end
+
+	local setEdge = newEdgeLights(theme, card)
+
+	local header = create("CanvasGroup", {
+		Name = "Header",
+		Size = UDim2.new(1, 0, 0, HEADER),
+		BackgroundTransparency = 1,
+		GroupTransparency = 1,
+		ZIndex = 5,
+		Parent = card,
+	})
+	local brand = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(22, 0),
+		Size = UDim2.new(1, -120, 1, 0),
+		Parent = header,
+		list({
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 8),
+		}),
+	})
+	local function toImage(logo)
+		if type(logo) == "number" or (type(logo) == "string" and logo:match("^%d+$")) then
+			return "rbxassetid://" .. tostring(logo)
+		end
+		return logo
+	end
+	window.LogoImage = create("ImageLabel", {
+		Image = toImage(options.Logo) or "",
+		BackgroundTransparency = 1,
+		ScaleType = Enum.ScaleType.Fit,
+		Size = UDim2.fromOffset(options.LogoSize or 22, options.LogoSize or 22),
+		Visible = options.Logo ~= nil,
+		LayoutOrder = 0,
+		Parent = brand,
+	})
+	window._toImage = toImage
+	window.TitleLabel = label(theme, {
+		Text = options.Title or "Isle",
+		FontFace = Fonts.SemiBold,
+		TextSize = 15,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		LayoutOrder = 1,
+		Parent = brand,
+	})
+	window.SubtitleLabel = label(theme, {
+		Text = options.Subtitle or "",
+		Visible = options.Subtitle ~= nil and options.Subtitle ~= "",
+		TextSize = 14,
+		Color = "Muted",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		LayoutOrder = 2,
+		Parent = brand,
+	})
+
+	local backBtn = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 14, 0.5, 0),
+		Size = UDim2.fromOffset(30, 30),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = header,
+		round(),
+	})
+	theme:Bind(backBtn, { BackgroundColor3 = "HoverColor" })
+	local backIcon = chevron(theme, backBtn, "Text", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Rotation = 180,
+	})
+	local backBars = backIcon:GetChildren()
+	backBtn.MouseEnter:Connect(function()
+		tween(backBtn, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") - 0.02 })
+	end)
+	backBtn.MouseLeave:Connect(function()
+		tween(backBtn, Ease.Hover, { BackgroundTransparency = 1 })
+	end)
+	backBtn.MouseButton1Click:Connect(function()
+		window:Back()
+	end)
+
+	function window:_updateBack()
+		local show = #self._history > 0
+		if show == self._backShown then
+			return
+		end
+		self._backShown = show
+		if show then
+			backBtn.Visible = true
+		end
+		for _, b in ipairs(backBars) do
+			tween(b, Ease.Smooth, { BackgroundTransparency = show and 0 or 1 })
+		end
+		tween(brand, Ease.Smooth, { Position = UDim2.fromOffset(show and 50 or 22, 0) })
+		if not show then
+			task.delay(0.3, function()
+				if not self._backShown then
+					backBtn.Visible = false
+				end
+			end)
+		end
+	end
+	for _, b in ipairs(backBars) do
+		b.BackgroundTransparency = 1
+	end
+
+	local controls = create("Frame", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -14, 0.5, 0),
+		Size = UDim2.fromOffset(66, 30),
+		BackgroundTransparency = 1,
+		Parent = header,
+		list({
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 4),
+		}),
+	})
+
+	local function iconButton(order)
+		local btn = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			Size = UDim2.fromOffset(30, 30),
+			BackgroundTransparency = 1,
+			LayoutOrder = order,
+			Parent = controls,
+			round(),
+		})
+		theme:Bind(btn, { BackgroundColor3 = "HoverColor" })
+		local parts = {}
+		btn.MouseEnter:Connect(function()
+			tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") - 0.02 })
+			for _, part in ipairs(parts) do
+				theme:Set(part[1], part[2], "Text", Ease.Hover)
+			end
+		end)
+		btn.MouseLeave:Connect(function()
+			tween(btn, Ease.Hover, { BackgroundTransparency = 1 })
+			for _, part in ipairs(parts) do
+				theme:Set(part[1], part[2], "Muted", Ease.Hover)
+			end
+		end)
+		return btn, parts
+	end
+
+	local themeBtn, themeParts = iconButton(1)
+	local ring = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(12, 12),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		Parent = themeBtn,
+		round(),
+	})
+	local ringStroke = create("UIStroke", { Thickness = 1.5, Parent = ring })
+	theme:Bind(ringStroke, { Color = "Muted" })
+	local ringClip = create("Frame", {
+		Size = UDim2.new(0, 6, 1, 0),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		Parent = ring,
+	})
+	local ringHalf = create("Frame", { Size = UDim2.fromOffset(12, 12), BorderSizePixel = 0, Parent = ringClip, round() })
+	theme:Bind(ringHalf, { BackgroundColor3 = "Muted" })
+	table.insert(themeParts, { ringStroke, "Color" })
+	table.insert(themeParts, { ringHalf, "BackgroundColor3" })
+
+	local closeBtn, closeParts = iconButton(2)
+	local cross = crossIcon(theme, closeBtn, "Muted", 11, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+	})
+	for _, child in ipairs(cross:GetChildren()) do
+		table.insert(closeParts, { child, "BackgroundColor3" })
+	end
+
+	function window:_themeIcon(animated)
+		local light = self.Theme.Name == "Light"
+		local clipPos = light and UDim2.fromOffset(6, 0) or UDim2.new()
+		local halfPos = light and UDim2.fromOffset(-6, 0) or UDim2.new()
+		if animated then
+			tween(ringClip, Ease.Slow, { Position = clipPos })
+			tween(ringHalf, Ease.Slow, { Position = halfPos })
+		else
+			ringClip.Position = clipPos
+			ringHalf.Position = halfPos
+		end
+	end
+
+	local pages = create("Frame", {
+		Name = "Pages",
+		Position = UDim2.fromOffset(0, HEADER),
+		Size = UDim2.new(1, 0, 1, -HEADER),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+		Parent = card,
+	})
+	window.PagesHolder = pages
+
+	local handle = create("Frame", {
+		Name = "Handle",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(96, HANDLE_H),
+		BackgroundTransparency = 1,
+		Parent = root,
+		round(),
+	})
+	theme:Bind(handle, { BackgroundColor3 = "HandleColor" })
+	local handleHit = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(220, 26),
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+
+	local island = create("Frame", {
+		Name = "IslandBack",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 18),
+		Size = UDim2.fromOffset(40, 40),
+		BackgroundTransparency = 1,
+		ZIndex = 50,
+		Parent = gui,
+		round(),
+	})
+	theme:Bind(island, { BackgroundColor3 = "Elevated" })
+	local islandStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = island })
+	theme:Bind(islandStroke, { Color = "StrokeColor" })
+	local islandShadow = newShadow(island, {
+		BlurRadius = UDim.new(0, 26),
+		Offset = UDim2.fromOffset(0, 8),
+		Transparency = 1,
+		ShowBehindParent = false,
+	})
+	if islandShadow then
+		theme:Bind(islandShadow, { Color = "Shadow" })
+	end
+	local islandCanvas = create("CanvasGroup", {
+		Name = "Island",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = island.Position,
+		Size = island.Size,
+		BackgroundTransparency = 1,
+		GroupTransparency = 1,
+		ZIndex = 51,
+		Parent = gui,
+		round(),
+	})
+	window._island = { Back = island, Shadow = islandShadow, Canvas = islandCanvas, Stroke = islandStroke }
+	local islandScale = create("UIScale", { Parent = island })
+	local islandCanvasScale = create("UIScale", { Parent = islandCanvas })
+
+	local handleHover = false
+	local function chrome()
+		local v = window._vis
+		fill.BackgroundTransparency = 1 - v
+		setRim(v)
+		if cardShadow then
+			cardShadow.Transparency = 1 - (1 - theme:Get("ShadowT")) * v
+		end
+		header.GroupTransparency = 1 - v
+		if dots then
+			dots.Canvas.GroupTransparency = 1 - v
+		end
+		nav.GroupTransparency = 1 - v
+		navBack.BackgroundTransparency = 1 - v
+		navStroke.Transparency = 1 - (1 - theme:Get("StrokeT")) * v
+		if navShadow then
+			navShadow.Transparency = 1 - (1 - theme:Get("ShadowT")) * v
+		end
+		local handleT = theme:Get("HandleT") - (handleHover and 0.25 or 0)
+		handle.BackgroundTransparency = 1 - (1 - handleT) * v
+		local e = smooth(v)
+		scale.Scale = (0.97 + 0.03 * e) * window.UserScale
+		islandScale.Scale = window.UserScale
+		islandCanvasScale.Scale = window.UserScale
+		root.Visible = v > 0.002
+	end
+	window._chrome = chrome
+
+	local shadeFrom, shadeTo, shadeT = shade, shade, 1
+	theme:OnChanged(function(animated)
+		if animated then
+			shadeFrom, shadeTo, shadeT = shade, theme:Get("Shade"), 0
+		else
+			setShade(theme:Get("Shade"))
+		end
+		chrome()
+	end)
+
+	local dragging = false
+	local dragStartMouse, dragStartOffset, dragStartAbs
+	local dragTarget
+	local dragMode = "card"
+
+	local LAG = {
+		card = { card = false, nav = { 170, 0.72 }, handle = { 170, 0.72 } },
+		nav = { nav = false, card = { 210, 0.8 }, handle = { 130, 0.72 } },
+		handle = { handle = false, card = { 190, 0.78 }, nav = { 105, 0.7 } },
+	}
+	local springs = {
+		card = { off = Vector2.zero, vel = Vector2.zero },
+		nav = { off = Vector2.zero, vel = Vector2.zero },
+		handle = { off = Vector2.zero, vel = Vector2.zero },
+	}
+	local MAX_LAG = 70
+
+	local function contains(inst, p)
+		local pos, size = inst.AbsolutePosition, inst.AbsoluteSize
+		return p.X >= pos.X and p.Y >= pos.Y and p.X <= pos.X + size.X and p.Y <= pos.Y + size.Y
+	end
+
+	local function reachable(inst, stop, p)
+		local node = inst
+		while node and node ~= stop do
+			if node:IsA("GuiObject") then
+				if not node.Visible then
+					return false
+				end
+				if node ~= inst and node.ClipsDescendants and not contains(node, p) then
+					return false
+				end
+			end
+			node = node.Parent
+		end
+		return true
+	end
+
+	local function overControl(container, p)
+		for _, inst in ipairs(container:GetDescendants()) do
+			if (inst:IsA("GuiButton") or inst:IsA("TextBox")) and not inst:GetAttribute("IsleStatic") then
+				if contains(inst, p) and reachable(inst, container, p) then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	local function beginDrag(mode)
+		dragging = true
+		dragMode = mode
+		dragStartMouse = UserInputService:GetMouseLocation()
+		dragStartOffset = Vector2.new(root.Position.X.Offset, root.Position.Y.Offset)
+		dragStartAbs = root.AbsolutePosition
+		dragTarget = dragStartOffset
+	end
+
+	window:_connect(UserInputService.InputBegan, function(input)
+		local t = input.UserInputType
+		if window._menu and (isPress(input) or t == Enum.UserInputType.MouseButton2) then
+			if contains(window._menu.Frame, pointer()) then
+				return
+			end
+			window:CloseMenu()
+		end
+		if not isPress(input) or not window.Visible or window._vis < 0.5 then
+			return
+		end
+		local p = pointer()
+		if contains(handleHit, p) then
+			beginDrag("handle")
+		elseif contains(card, p) then
+			if not overControl(card, p) then
+				beginDrag("card")
+			end
+		elseif contains(navBack, p) then
+			if not overControl(nav, p) then
+				beginDrag("nav")
+			end
+		end
+	end)
+	handleHit.MouseEnter:Connect(function()
+		handleHover = true
+		tween(handle, Ease.Smooth, { Size = UDim2.fromOffset(132, HANDLE_H + 1) })
+		chrome()
+	end)
+	handleHit.MouseLeave:Connect(function()
+		handleHover = false
+		if not dragging then
+			tween(handle, Ease.Smooth, { Size = UDim2.fromOffset(96, HANDLE_H) })
+		end
+		chrome()
+	end)
+
+	window:_connect(UserInputService.InputChanged, function(input)
+		if dragging and isMove(input) then
+			local camera = workspace.CurrentCamera
+			local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+			local delta = UserInputService:GetMouseLocation() - dragStartMouse
+			local size = root.AbsoluteSize
+			local predicted = dragStartAbs + delta
+			local clamped = Vector2.new(
+				math.clamp(predicted.X, -size.X * 0.5, viewport.X - size.X * 0.5),
+				math.clamp(predicted.Y, 0, viewport.Y - 120)
+			)
+			dragTarget = dragStartOffset + (clamped - dragStartAbs)
+		end
+	end)
+	window:_connect(UserInputService.InputEnded, function(input)
+		if dragging and isPress(input) then
+			dragging = false
+			if not handleHover then
+				tween(handle, Ease.Smooth, { Size = UDim2.fromOffset(96, HANDLE_H) })
+			end
+		end
+	end)
+
+	window:_connect(UserInputService.InputBegan, function(input)
+		if input.UserInputType ~= Enum.UserInputType.Keyboard then
+			return
+		end
+		local key = input.KeyCode
+		if window._capture then
+			local capture = window._capture
+			window._capture = nil
+			capture(key)
+			return
+		end
+		local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+		if ctrl and (key == Enum.KeyCode.F or key == Enum.KeyCode.K) then
+			window:FocusSearch()
+			return
+		end
+		if UserInputService:GetFocusedTextBox() then
+			return
+		end
+		if key == window.ToggleKey then
+			window:Toggle()
+			return
+		end
+		if window.Visible and key == Enum.KeyCode.Backspace then
+			window:Back()
+			return
+		end
+		if window.Visible and not ctrl then
+			local index = DIGITS[key]
+			if index then
+				local shown = {}
+				for _, page in ipairs(window.Pages) do
+					if page.NavItem.Visible then
+						table.insert(shown, page)
+					end
+				end
+				if shown[index] then
+					window:SelectPage(shown[index])
+				end
+			end
+		end
+	end)
+
+	local indicatorPos, indicatorSize
+
+	window:_connect(RunService.RenderStepped, function(dt)
+		local target = window.Visible and 1 or 0
+		if math.abs(window._vis - target) > 0.001 then
+			window._vis += (target - window._vis) * damp(window.Visible and 9 or 13, dt)
+			if math.abs(window._vis - target) < 0.002 then
+				window._vis = target
+			end
+			chrome()
+		end
+
+		if shadeT < 1 then
+			shadeT = math.min(1, shadeT + dt / 0.6)
+			setShade(shadeFrom + (shadeTo - shadeFrom) * smooth(shadeT))
+		end
+
+		local s = scale.Scale > 0 and scale.Scale or 1
+		local camera = workspace.CurrentCamera
+		local viewportY = camera and camera.ViewportSize.Y or 1080
+		local room = (viewportY - card.AbsolutePosition.Y) / s - (HANDLE_GAP + HANDLE_H + 24)
+		local limit = math.max(math.min(window.MaxHeight, room), window.MinHeight)
+
+		local active = window.ActivePage
+		local wanted = window.MinHeight
+		if active then
+			wanted = HEADER + active.Content.AbsoluteSize.Y / s
+		end
+		wanted = math.clamp(wanted, window.MinHeight, limit)
+		if math.abs(window._height - wanted) > 0.1 then
+			window._height += (wanted - window._height) * damp(13, dt)
+			if math.abs(window._height - wanted) < 0.1 then
+				window._height = wanted
+			end
+		end
+		local h = math.floor(window._height + 0.5)
+		if card.Size.Y.Offset ~= h then
+			card.Size = UDim2.fromOffset(W, h)
+			root.Size = UDim2.fromOffset(W, totalHeight(h))
+			if dots then
+				dots.SetHeight(h)
+			end
+		end
+		local handleY = NAV_H + NAV_GAP + h + HANDLE_GAP + HANDLE_H / 2
+		handle.Position = UDim2.new(0.5, springs.handle.off.X, 0, handleY + springs.handle.off.Y)
+		handleHit.Position = handle.Position
+
+		local mouse = (pointer() - card.AbsolutePosition) / s
+		local overCard = window.Visible and mouse.X >= 0 and mouse.Y >= 0 and mouse.X <= W and mouse.Y <= h
+		if dots then
+			dots.Step(dt, mouse, window.Visible)
+		end
+		local edgeGoal = overCard and theme:Get("EdgeHover") or theme:Get("EdgeLight")
+		window._edge += (edgeGoal - window._edge) * damp(5, dt)
+		setEdge(1 - (1 - window._edge) * window._vis)
+
+		for _, page in ipairs(window.Pages) do
+			local goal = page == active and 1 or 0
+			if math.abs(page._alpha - goal) > 0.001 or page._dirty then
+				page._dirty = false
+				page._alpha += (goal - page._alpha) * damp(goal == 1 and 10 or 18, dt)
+				if math.abs(page._alpha - goal) < 0.003 then
+					page._alpha = goal
+				end
+				local a = page._alpha
+				page.Canvas.Visible = a > 0.003
+				page.Canvas.Position = UDim2.fromOffset(0, (1 - smooth(a)) * (goal == 1 and 8 or -4))
+			end
+			local groupT = 1 - page._alpha * window._vis
+			if math.abs(page.Canvas.GroupTransparency - groupT) > 0.0005 then
+				page.Canvas.GroupTransparency = groupT
+			end
+		end
+
+		navIndicator.Visible = active ~= nil and active.NavItem.Visible
+		if active and active.NavItem.Visible then
+			local item = active.NavItem
+			local targetPos = (item.AbsolutePosition - nav.AbsolutePosition) / s
+			local targetSize = item.AbsoluteSize / s
+			if not indicatorPos or window._snapIndicator then
+				window._snapIndicator = false
+				indicatorPos, indicatorSize = targetPos, targetSize
+			else
+				local a = damp(18, dt)
+				indicatorPos = indicatorPos:Lerp(targetPos, a)
+				indicatorSize = indicatorSize:Lerp(targetSize, a)
+			end
+			navIndicator.Position = UDim2.fromOffset(indicatorPos.X, indicatorPos.Y)
+			navIndicator.Size = UDim2.fromOffset(indicatorSize.X, indicatorSize.Y)
+		end
+		local navSize = nav.AbsoluteSize / s
+		navBack.Size = UDim2.fromOffset(navSize.X, navSize.Y)
+
+		local moved = Vector2.zero
+		if dragTarget then
+			local current = Vector2.new(root.Position.X.Offset, root.Position.Y.Offset)
+			moved = dragTarget - current
+			root.Position = UDim2.new(root.Position.X.Scale, dragTarget.X, root.Position.Y.Scale, dragTarget.Y)
+			if not dragging then
+				dragTarget = nil
+			end
+		end
+
+		local lag = LAG[dragMode]
+		local step = math.min(dt, 0.1)
+		local substeps = math.max(1, math.ceil(step / (1 / 120)))
+		local h_ = step / substeps
+		for name, spring in pairs(springs) do
+			local params = lag[name]
+			if params == false then
+				params = { 900, 1 }
+			else
+				spring.off -= moved / s
+			end
+			local k, zeta = params[1], params[2]
+			local c = 2 * zeta * math.sqrt(k)
+			for _ = 1, substeps do
+				spring.vel += (-k * spring.off - c * spring.vel) * h_
+				spring.off += spring.vel * h_
+			end
+			if spring.off.Magnitude > MAX_LAG then
+				spring.off = spring.off.Unit * MAX_LAG
+			end
+			if spring.off.Magnitude < 0.01 and spring.vel.Magnitude < 0.01 then
+				spring.off, spring.vel = Vector2.zero, Vector2.zero
+			end
+		end
+
+		local navOff, cardOff = springs.nav.off, springs.card.off
+		nav.Position = UDim2.new(0.5, navOff.X, 0, navOff.Y)
+		navBack.Position = nav.Position
+		card.Position = UDim2.fromOffset(cardOff.X, NAV_H + NAV_GAP + cardOff.Y)
+	end)
+
+	themeBtn.MouseButton1Click:Connect(function()
+		window:ToggleTheme()
+	end)
+	closeBtn.MouseButton1Click:Connect(function()
+		window:SetVisible(false)
+		window:Notify({ Title = "Hidden", Content = "Press " .. window.ToggleKey.Name .. " to open", Duration = 2.5 })
+	end)
+
+	mount(gui)
+	window:_themeIcon(false)
+	chrome()
+	return window
+end
+
+function Window:_connect(signal, fn)
+	local connection = signal:Connect(fn)
+	table.insert(self._connections, connection)
+	return connection
+end
+
+function Window:SetVisible(visible)
+	if not self._destroyed then
+		self.Visible = visible
+		if not visible then
+			self:CloseMenu()
+		end
+	end
+end
+
+function Window:Toggle()
+	self:SetVisible(not self.Visible)
+end
+
+function Window:SetTheme(name, instant)
+	if not Themes[name] or name == self.Theme.Name then
+		return
+	end
+	self.Theme.Name = name
+	self.Theme:Apply(not instant)
+	self:_themeIcon(not instant)
+	if self._onTheme then
+		fire(self._onTheme, name)
+	end
+end
+
+function Window:ToggleTheme()
+	self:SetTheme(self.Theme.Name == "Dark" and "Light" or "Dark")
+end
+
+function Window:OnThemeChanged(fn)
+	self._onTheme = fn
+end
+
+function Window:OnPageChanged(fn)
+	self._onPage = fn
+end
+
+function Window:SetGlow(enabled)
+	if self.Dots then
+		self.Dots.SetEnabled(enabled)
+	end
+end
+
+function Window:SetScale(value)
+	self.UserScale = math.clamp(value, self.MinScale, self.MaxScale)
+	self._chrome()
+	if self._onScale then
+		fire(self._onScale, self.UserScale)
+	end
+end
+
+function Window:OnScaleChanged(fn)
+	self._onScale = fn
+end
+
+function Window:SetToggleKey(key)
+	self.ToggleKey = key
+end
+
+function Window:SetTitle(title, subtitle)
+	if title then
+		self.TitleLabel.Text = title
+	end
+	if subtitle then
+		self.SubtitleLabel.Text = subtitle
+		self.SubtitleLabel.Visible = subtitle ~= ""
+	end
+end
+
+function Window:SetLogo(logo)
+	self.LogoImage.Image = self._toImage(logo) or ""
+	self.LogoImage.Visible = logo ~= nil
+end
+
+function Window:Destroy()
+	if self._destroyed then
+		return
+	end
+	self.Visible = false
+	self._destroyed = true
+	task.delay(0.5, function()
+		for _, connection in ipairs(self._connections) do
+			connection:Disconnect()
+		end
+		self.Gui:Destroy()
+	end)
+end
+
+function Window:Notify(opts)
+	if type(opts) == "string" then
+		opts = { Title = opts }
+	end
+	table.insert(self._toasts, opts or {})
+	if self._toastBusy then
+		return
+	end
+	self._toastBusy = true
+	task.spawn(function()
+		while #self._toasts > 0 and not self._destroyed do
+			self:_showToast(table.remove(self._toasts, 1))
+		end
+		self._toastBusy = false
+	end)
+end
+
+function Window:_showToast(opts)
+	local theme = self.Theme
+	local island = self._island
+	local canvas = island.Canvas
+	local toneKey = ({ Danger = "Danger", Safe = "Safe", Warning = "Warning", Success = "Safe", Error = "Danger" })[opts.Type]
+		or "Accent"
+
+	for _, child in ipairs(canvas:GetChildren()) do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+
+	local row = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = canvas,
+		pad(0, 18, 0, 16),
+		list({
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 9),
+		}),
+	})
+	local toneDot = create("Frame", { Size = UDim2.fromOffset(7, 7), LayoutOrder = 1, Parent = row, round() })
+	theme:Bind(toneDot, { BackgroundColor3 = toneKey })
+	local title = label(theme, {
+		Text = opts.Title or "",
+		FontFace = Fonts.Medium,
+		TextSize = 14,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		TextTransparency = 1,
+		LayoutOrder = 2,
+		Parent = row,
+	})
+	local content
+	if opts.Content and opts.Content ~= "" then
+		content = label(theme, {
+			Text = opts.Content,
+			TextSize = 14,
+			Color = "SubText",
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 1, 0),
+			TextTruncate = Enum.TextTruncate.None,
+			TextTransparency = 1,
+			LayoutOrder = 3,
+			Parent = row,
+		})
+	end
+
+	local width = 16 + 7 + 9 + textWidth(title.Text, Fonts.Medium, 14) + 18
+	if content then
+		width += 9 + textWidth(content.Text, Fonts.Regular, 14)
+	end
+	width = math.min(math.ceil(width), 520)
+
+	local morph = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	local back = island.Back
+	back.Size = UDim2.fromOffset(40, 40)
+	canvas.Size = back.Size
+	tween(back, Ease.Smooth, { BackgroundTransparency = 0 })
+	tween(island.Stroke, Ease.Smooth, { Transparency = theme:Get("StrokeT") })
+	tween(canvas, Ease.Smooth, { GroupTransparency = 0 })
+	if island.Shadow then
+		tween(island.Shadow, Ease.Smooth, { Transparency = theme:Get("ShadowT") })
+	end
+	task.wait(0.1)
+	tween(back, morph, { Size = UDim2.fromOffset(width, 40) })
+	tween(canvas, morph, { Size = UDim2.fromOffset(width, 40) })
+	task.wait(0.16)
+	tween(title, Ease.Smooth, { TextTransparency = 0 })
+	if content then
+		tween(content, Ease.Smooth, { TextTransparency = 0 })
+	end
+
+	task.wait(opts.Duration or 3)
+
+	tween(title, Ease.Hover, { TextTransparency = 1 })
+	if content then
+		tween(content, Ease.Hover, { TextTransparency = 1 })
+	end
+	task.wait(0.14)
+	tween(back, morph, { Size = UDim2.fromOffset(40, 40) })
+	tween(canvas, morph, { Size = UDim2.fromOffset(40, 40) })
+	task.wait(0.28)
+	tween(back, Ease.Smooth, { BackgroundTransparency = 1 })
+	tween(island.Stroke, Ease.Smooth, { Transparency = 1 })
+	tween(canvas, Ease.Smooth, { GroupTransparency = 1 })
+	if island.Shadow then
+		tween(island.Shadow, Ease.Smooth, { Transparency = 1 })
+	end
+	task.wait(0.35)
+end
+
+function Window:FocusSearch()
+	if self._destroyed then
+		return
+	end
+	if not self.Visible then
+		self:SetVisible(true)
+	end
+	local page = self.ActivePage
+	if not (page and page.FocusTarget) then
+		for _, candidate in ipairs(self.Pages) do
+			if candidate.FocusTarget then
+				page = candidate
+				break
+			end
+		end
+	end
+	if page and page.FocusTarget then
+		self:SelectPage(page)
+		task.defer(function()
+			page.FocusTarget:Focus()
+		end)
+	end
+end
+
+function Window:Copy(text, what)
+	local fn = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+	if type(fn) == "function" and pcall(fn, tostring(text)) then
+		self:Notify({ Title = "Copied", Content = what, Type = "Safe", Duration = 2 })
+		return true
+	end
+	self:Notify({ Title = "Can't copy", Content = "Clipboard isn't available here", Type = "Warning", Duration = 2.5 })
+	return false
+end
+
+function Window:CloseMenu()
+	local menu = self._menu
+	if not menu then
+		return
+	end
+	self._menu = nil
+	tween(menu.Scale, Ease.Hover, { Scale = self.UserScale * 0.96 })
+	tween(menu.Frame, Ease.Hover, { BackgroundTransparency = 1 })
+	tween(menu.Stroke, Ease.Hover, { Transparency = 1 })
+	if menu.Shadow then
+		tween(menu.Shadow, Ease.Hover, { Transparency = 1 })
+	end
+	for _, text in ipairs(menu.Labels) do
+		tween(text, Ease.Hover, { TextTransparency = 1 })
+	end
+	task.delay(0.22, function()
+		menu.Frame:Destroy()
+	end)
+end
+
+function Window:OpenMenu(items)
+	self:CloseMenu()
+	if self._destroyed or not items or #items == 0 then
+		return
+	end
+	local theme = self.Theme
+	local WIDTH = 196
+	local pos = self._pointer()
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+	local height = 8 + #items * 34
+	local x = math.min(pos.X + 6, viewport.X - WIDTH * self.UserScale - 8)
+	local y = math.min(pos.Y + 6, viewport.Y - height * self.UserScale - 60)
+
+	local frame = create("Frame", {
+		Name = "Menu",
+		Position = UDim2.fromOffset(x, y),
+		Size = UDim2.fromOffset(WIDTH, height),
+		BackgroundTransparency = 1,
+		ZIndex = 60,
+		Parent = self.Gui,
+		corner(12),
+		pad(4),
+		list({ Padding = UDim.new(0, 0) }),
+	})
+	theme:Bind(frame, { BackgroundColor3 = "Elevated" })
+	local menuStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = frame })
+	theme:Bind(menuStroke, { Color = "StrokeColor" })
+	local menuShadow = newShadow(frame, {
+		BlurRadius = UDim.new(0, 24),
+		Offset = UDim2.fromOffset(0, 8),
+		Transparency = 1,
+		ShowBehindParent = false,
+	})
+	if menuShadow then
+		theme:Bind(menuShadow, { Color = "Shadow" })
+	end
+	local menuScale = create("UIScale", { Scale = self.UserScale * 0.96, Parent = frame })
+
+	local labels = {}
+	for i, item in ipairs(items) do
+		local btn = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 34),
+			LayoutOrder = i,
+			ZIndex = 61,
+			Parent = frame,
+			corner(8),
+		})
+		theme:Bind(btn, { BackgroundColor3 = "HoverColor" })
+		local text = label(theme, {
+			Text = item.Title or "",
+			FontFace = Fonts.Medium,
+			TextSize = 14,
+			Color = item.Danger and "Danger" or "Text",
+			TextTransparency = 1,
+			Position = UDim2.fromOffset(12, 0),
+			Size = UDim2.new(1, -24, 1, 0),
+			ZIndex = 62,
+			Parent = btn,
+		})
+		table.insert(labels, text)
+		btn.MouseEnter:Connect(function()
+			tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") - 0.02 })
+		end)
+		btn.MouseLeave:Connect(function()
+			tween(btn, Ease.Hover, { BackgroundTransparency = 1 })
+		end)
+		btn.MouseButton1Click:Connect(function()
+			self:CloseMenu()
+			fire(item.Callback)
+		end)
+	end
+
+	tween(menuScale, Ease.Smooth, { Scale = self.UserScale })
+	tween(frame, Ease.Hover, { BackgroundTransparency = 0 })
+	tween(menuStroke, Ease.Hover, { Transparency = theme:Get("StrokeT") })
+	if menuShadow then
+		tween(menuShadow, Ease.Hover, { Transparency = theme:Get("ShadowT") })
+	end
+	for _, text in ipairs(labels) do
+		tween(text, Ease.Hover, { TextTransparency = 0 })
+	end
+	self._menu = { Frame = frame, Scale = menuScale, Stroke = menuStroke, Shadow = menuShadow, Labels = labels }
+end
+
+function Window:Page(opts)
+	if type(opts) == "string" then
+		opts = { Title = opts }
+	end
+	opts = opts or {}
+	local theme = self.Theme
+	local page = setmetatable({ Window = self, Title = opts.Title or "Page", _order = 0, _alpha = 0, _dirty = true }, Page)
+
+	local item = create("TextButton", {
+		Name = page.Title,
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		LayoutOrder = #self.Pages + 1,
+		Visible = opts.Hidden ~= true,
+		Parent = self.NavItems,
+		pad(0, 16, 0, 16),
+	})
+	local itemLabel = label(theme, {
+		Text = page.Title,
+		FontFace = Fonts.Medium,
+		TextSize = 14,
+		Color = "Muted",
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTruncate = Enum.TextTruncate.None,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		Parent = item,
+	})
+	page.NavItem = item
+	page.NavLabel = itemLabel
+
+	local canvas = create("CanvasGroup", {
+		Name = page.Title,
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		GroupTransparency = 1,
+		Visible = false,
+		Parent = self.PagesHolder,
+		corner(RADIUS),
+	})
+	local scroll = create("ScrollingFrame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageTransparency = 0.85,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = canvas,
+	})
+	theme:Bind(scroll, { ScrollBarImageColor3 = "Text" })
+	local content = create("Frame", {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = scroll,
+		pad(2, 22, 22, 22),
+		list({ Padding = UDim.new(0, 12) }),
+	})
+	page.Canvas = canvas
+	page.Scroll = scroll
+	page.Content = content
+
+	item.MouseEnter:Connect(function()
+		if self.ActivePage ~= page then
+			theme:Set(itemLabel, "TextColor3", "SubText", Ease.Hover)
+		end
+	end)
+	item.MouseLeave:Connect(function()
+		if self.ActivePage ~= page then
+			theme:Set(itemLabel, "TextColor3", "Muted", Ease.Hover)
+		end
+	end)
+	item.MouseButton1Click:Connect(function()
+		self:SelectPage(page)
+	end)
+
+	table.insert(self.Pages, page)
+	if not self.ActivePage then
+		self:SelectPage(page, true)
+	end
+	return page
+end
+
+function Window:SelectPage(page, instant, fromBack)
+	if self.ActivePage == page then
+		return
+	end
+	local theme = self.Theme
+	local old = self.ActivePage
+	if old and not fromBack then
+		table.insert(self._history, old)
+		if #self._history > 40 then
+			table.remove(self._history, 1)
+		end
+	end
+	self.ActivePage = page
+	if self._updateBack then
+		self:_updateBack()
+	end
+	if old then
+		theme:Set(old.NavLabel, "TextColor3", "Muted", Ease.Hover)
+	end
+	theme:Set(page.NavLabel, "TextColor3", "Text", if instant then nil else Ease.Hover)
+	page.Scroll.CanvasPosition = Vector2.zero
+	page.Canvas.Visible = true
+	if instant then
+		page._alpha = 1
+		self._snapIndicator = true
+	end
+	page._dirty = true
+	if self._onPage then
+		fire(self._onPage, page.Title)
+	end
+end
+
+function Window:Back()
+	while #self._history > 0 do
+		local page = table.remove(self._history)
+		if page ~= self.ActivePage then
+			self:SelectPage(page, false, true)
+			return true
+		end
+	end
+	self:_updateBack()
+	return false
+end
+
+function Window:ClearHistory()
+	table.clear(self._history)
+	self:_updateBack()
+end
+
+function Page:_next()
+	self._order += 1
+	return self._order
+end
+
+function Page:Select()
+	self.Window:SelectPage(self)
+end
+
+local function finish(obj, row)
+	obj.Row = row
+	function obj:SetVisible(visible)
+		row.Visible = visible
+	end
+	function obj:Destroy()
+		row:Destroy()
+	end
+	return obj
+end
+
+function Page:Tiles(tiles)
+	local theme = self.Window.Theme
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+		create("UIGridLayout", {
+			CellSize = UDim2.new(0.5, -6, 0, 104),
+			CellPadding = UDim2.fromOffset(12, 12),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+	})
+	for i, tile in ipairs(tiles or {}) do
+		local btn = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			LayoutOrder = i,
+			Parent = holder,
+			corner(18),
+		})
+		theme:Bind(btn, { BackgroundColor3 = "GroupColor", BackgroundTransparency = "GroupT" })
+		local btnScale = create("UIScale", { Parent = btn })
+		label(theme, {
+			Text = tile.Title or "",
+			FontFace = Fonts.SemiBold,
+			TextSize = 16,
+			Position = UDim2.fromOffset(16, 16),
+			Size = UDim2.new(1, -48, 0, 20),
+			Parent = btn,
+		})
+		label(theme, {
+			Text = tile.Description or "",
+			TextSize = 13,
+			Color = "SubText",
+			TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Position = UDim2.fromOffset(16, 42),
+			Size = UDim2.new(1, -32, 1, -56),
+			Parent = btn,
+		})
+		local arrow = chevron(theme, btn, "Muted", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -16, 0, 21),
+		})
+		btn.MouseEnter:Connect(function()
+			tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("GroupT") - 0.025 })
+			tween(arrow, Ease.Smooth, { Position = UDim2.new(1, -13, 0, 21) })
+		end)
+		btn.MouseLeave:Connect(function()
+			tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("GroupT") })
+			tween(arrow, Ease.Smooth, { Position = UDim2.new(1, -16, 0, 21) })
+			tween(btnScale, Ease.Smooth, { Scale = 1 })
+		end)
+		btn.MouseButton1Down:Connect(function()
+			tween(btnScale, Ease.Quick, { Scale = 0.98 })
+		end)
+		btn.MouseButton1Up:Connect(function()
+			tween(btnScale, Ease.Smooth, { Scale = 1 })
+		end)
+		btn.MouseButton1Click:Connect(function()
+			fire(tile.Callback)
+		end)
+	end
+	return finish({}, holder)
+end
+
+function Page:Heading(title, subtitle)
+	local theme = self.Window.Theme
+	local frame = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+		pad(4, 0, 6, 2),
+		list({ Padding = UDim.new(0, 4) }),
+	})
+	local titleLabel = label(theme, {
+		Text = title or "",
+		FontFace = Fonts.SemiBold,
+		TextSize = 24,
+		Size = UDim2.new(1, 0, 0, 28),
+		LayoutOrder = 1,
+		Parent = frame,
+	})
+	local subLabel = label(theme, {
+		Text = subtitle or "",
+		TextSize = 14,
+		Color = "SubText",
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = subtitle ~= nil and subtitle ~= "",
+		LayoutOrder = 2,
+		Parent = frame,
+	})
+	return finish({
+		Set = function(_, newTitle, newSubtitle)
+			if newTitle then
+				titleLabel.Text = newTitle
+			end
+			if newSubtitle then
+				subLabel.Text = newSubtitle
+				subLabel.Visible = newSubtitle ~= ""
+			end
+		end,
+	}, frame)
+end
+
+function Page:Section(title)
+	local theme = self.Window.Theme
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+		list({ Padding = UDim.new(0, 8) }),
+	})
+	local header = label(theme, {
+		Text = title or "",
+		FontFace = Fonts.Medium,
+		TextSize = 13,
+		Color = "Muted",
+		Size = UDim2.new(1, 0, 0, 16),
+		Visible = title ~= nil,
+		LayoutOrder = 1,
+		Parent = holder,
+		pad(0, 0, 0, 4),
+	})
+	local group = create("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		Parent = holder,
+		corner(16),
+		pad(4),
+		list({ Padding = UDim.new(0, 0) }),
+	})
+	theme:Bind(group, { BackgroundColor3 = "GroupColor", BackgroundTransparency = "GroupT" })
+	return setmetatable({
+		Window = self.Window,
+		Page = self,
+		Holder = holder,
+		Header = header,
+		Card = group,
+		_order = 0,
+	}, Section)
+end
+
+function Section:_next()
+	self._order += 1
+	return self._order
+end
+
+function Section:SetVisible(visible)
+	self.Holder.Visible = visible
+end
+
+function Section:SetTitle(title)
+	self.Header.Text = title
+	self.Header.Visible = true
+end
+
+function Section:Clear()
+	for _, child in ipairs(self.Card:GetChildren()) do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+	self._order = 0
+end
+
+function Section:_shell(height)
+	local theme = self.Window.Theme
+	local order = self:_next()
+	local row = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, height),
+		LayoutOrder = order,
+		Parent = self.Card,
+		corner(12),
+	})
+	theme:Bind(row, { BackgroundColor3 = "HoverColor" })
+	if order > 1 then
+		hairline(theme, row, 14)
+	end
+	return row
+end
+
+function Section:_row(opts, rightWidth)
+	local theme = self.Window.Theme
+	local hasDesc = type(opts.Description) == "string" and opts.Description ~= ""
+	local height = hasDesc and 60 or 48
+	local row = self:_shell(height)
+	local reserve = rightWidth > 0 and rightWidth + 34 or 28
+	local title = label(theme, {
+		Text = opts.Title or "",
+		FontFace = Fonts.Medium,
+		TextSize = 15,
+		Position = UDim2.fromOffset(14, hasDesc and 11 or 0),
+		Size = UDim2.new(1, -reserve, 0, hasDesc and 20 or height),
+		Parent = row,
+	})
+	local desc
+	if hasDesc then
+		desc = label(theme, {
+			Text = opts.Description,
+			TextSize = 13,
+			Color = "SubText",
+			Position = UDim2.fromOffset(14, 32),
+			Size = UDim2.new(1, -reserve, 0, 16),
+			Parent = row,
+		})
+	end
+	local right
+	if rightWidth > 0 then
+		right = create("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -12, 0.5, 0),
+			Size = UDim2.fromOffset(rightWidth, 32),
+			BackgroundTransparency = 1,
+			Parent = row,
+		})
+	end
+	if opts.Hover ~= false then
+		row.MouseEnter:Connect(function()
+			tween(row, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") })
+		end)
+		row.MouseLeave:Connect(function()
+			tween(row, Ease.Hover, { BackgroundTransparency = 1 })
+		end)
+	end
+	return row, right, title, desc
+end
+
+function Section:Button(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local row, right, title = self:_row(opts, 14)
+	local arrow = chevron(theme, right, "Muted", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -2, 0.5, 0),
+		Rotation = 0,
+	})
+	local rowScale = create("UIScale", { Parent = row })
+	row.MouseEnter:Connect(function()
+		tween(arrow, Ease.Smooth, { Position = UDim2.new(1, 1, 0.5, 0) })
+	end)
+	row.MouseLeave:Connect(function()
+		tween(arrow, Ease.Smooth, { Position = UDim2.new(1, -2, 0.5, 0) })
+		tween(rowScale, Ease.Smooth, { Scale = 1 })
+	end)
+	row.MouseButton1Down:Connect(function()
+		tween(rowScale, Ease.Quick, { Scale = 0.985 })
+	end)
+	row.MouseButton1Up:Connect(function()
+		tween(rowScale, Ease.Smooth, { Scale = 1 })
+	end)
+	row.MouseButton1Click:Connect(function()
+		fire(opts.Callback)
+	end)
+	return finish({
+		SetTitle = function(_, value)
+			title.Text = value
+		end,
+	}, row)
+end
+
+function Section:Toggle(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local row, right = self:_row(opts, 40)
+	local track = create("Frame", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.fromOffset(40, 24),
+		Parent = right,
+		round(),
+	})
+	local knob = create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 3, 0.5, 0),
+		Size = UDim2.fromOffset(18, 18),
+		Parent = track,
+		round(),
+	})
+
+	local obj = { Value = false }
+	local function render(animated)
+		local on = obj.Value
+		local info = animated and Ease.Smooth or nil
+		theme:Set(track, "BackgroundColor3", on and "Primary" or "TrackColor", info)
+		theme:Set(track, "BackgroundTransparency", on and "Opaque" or "TrackT", info)
+		theme:Set(knob, "BackgroundColor3", on and "PrimaryText" or "Knob", info)
+		local goal = { Position = on and UDim2.new(0, 19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0), Size = UDim2.fromOffset(18, 18) }
+		if animated then
+			tween(knob, Ease.Smooth, goal)
+		else
+			knob.Position, knob.Size = goal.Position, goal.Size
+		end
+	end
+	function obj:Set(value, silent)
+		value = value and true or false
+		local changed = value ~= self.Value
+		self.Value = value
+		render(true)
+		if changed and not silent then
+			fire(opts.Callback, value)
+		end
+	end
+	function obj:Get()
+		return self.Value
+	end
+
+	row.MouseButton1Down:Connect(function()
+		tween(knob, Ease.Quick, {
+			Size = UDim2.fromOffset(22, 18),
+			Position = obj.Value and UDim2.new(0, 15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+		})
+	end)
+	row.MouseLeave:Connect(function()
+		render(true)
+	end)
+	row.MouseButton1Click:Connect(function()
+		obj:Set(not obj.Value)
+	end)
+
+	obj.Value = opts.Default == true
+	render(false)
+	return finish(obj, row)
+end
+
+local function field(theme, parent, opts, height, radius)
+	local frame = create("Frame", { Size = UDim2.new(1, 0, 0, height), Parent = parent, corner(radius) })
+	theme:Bind(frame, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+	local focus = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = frame })
+	theme:Bind(focus, { Color = "StrokeColor" })
+	return frame, focus
+end
+
+local function focusStyle(theme, stroke, active)
+	if active then
+		theme:Set(stroke, "Transparency", "FocusT", Ease.Hover)
+	else
+		theme:Unbind(stroke, "Transparency")
+		tween(stroke, Ease.Hover, { Transparency = 1 })
+	end
+end
+
+function Section:Input(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local row, right = self:_row(opts, opts.Width or 200)
+	local frame, focus = field(theme, right, opts, 32, 10)
+	frame.Size = UDim2.fromScale(1, 1)
+	local box = label(theme, {
+		Class = "TextBox",
+		Text = opts.Default or "",
+		PlaceholderText = opts.Placeholder or "",
+		ClearTextOnFocus = false,
+		TextSize = 14,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, opts.Secret and -46 or -24, 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		ClipsDescendants = true,
+		Parent = frame,
+	})
+	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+	local secret
+	if opts.Secret then
+		secret = secretControl(theme, box, frame, 2)
+	end
+
+	local obj = { Value = box.Text, Box = box }
+	function obj:Set(value, silent)
+		box.Text = tostring(value or "")
+		self.Value = box.Text
+		if not silent then
+			fire(opts.Callback, self.Value)
+		end
+	end
+	function obj:Get()
+		return box.Text
+	end
+	function obj:Focus()
+		box:CaptureFocus()
+	end
+
+	box.Focused:Connect(function()
+		focusStyle(theme, focus, true)
+	end)
+	box.FocusLost:Connect(function(enter)
+		focusStyle(theme, focus, false)
+		if secret then
+			secret:Hide()
+		end
+		obj.Value = box.Text
+		if enter or not opts.EnterOnly then
+			fire(opts.Callback, box.Text)
+		end
+	end)
+	row.MouseButton1Click:Connect(function()
+		box:CaptureFocus()
+	end)
+	return finish(obj, row)
+end
+
+function Section:Keybind(opts)
+	opts = opts or {}
+	local window = self.Window
+	local theme = window.Theme
+	local row, right = self:_row(opts, 130)
+	local pill = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(0, 0, 0, 30),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = right,
+		corner(9),
+		pad(0, 12, 0, 12),
+		create("UISizeConstraint", { MinSize = Vector2.new(56, 30) }),
+	})
+	theme:Bind(pill, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+	local pillStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = pill })
+	theme:Bind(pillStroke, { Color = "StrokeColor" })
+	local text = label(theme, {
+		Text = "",
+		FontFace = Fonts.Medium,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTruncate = Enum.TextTruncate.None,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		Parent = pill,
+	})
+
+	local obj = { Value = opts.Default }
+	local listening = false
+	local function display()
+		text.Text = listening and "Press a key" or keyName(obj.Value)
+		theme:Set(text, "TextColor3", listening and "SubText" or "Text")
+	end
+	function obj:Set(key, silent)
+		self.Value = key
+		display()
+		if not silent then
+			fire(opts.Callback, key)
+		end
+	end
+	function obj:Get()
+		return self.Value
+	end
+
+	local function start()
+		if listening then
+			return
+		end
+		listening = true
+		display()
+		focusStyle(theme, pillStroke, true)
+		window._capture = function(key)
+			listening = false
+			focusStyle(theme, pillStroke, false)
+			if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Unknown then
+				display()
+				return
+			end
+			obj:Set(key)
+		end
+	end
+	pill.MouseButton1Click:Connect(start)
+	row.MouseButton1Click:Connect(start)
+
+	display()
+	return finish(obj, row)
+end
+
+local function segmented(theme, parent, options, default, callback, height)
+	local radius = height >= 36 and 12 or 10
+	local frame = create("Frame", {
+		Size = UDim2.new(1, 0, 0, height),
+		Parent = parent,
+		corner(radius),
+		pad(3),
+	})
+	theme:Bind(frame, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+	local count = math.max(#options, 1)
+	local indicator = create("Frame", {
+		Size = UDim2.fromScale(1 / count, 1),
+		ZIndex = 1,
+		Parent = frame,
+		corner(radius - 3),
+	})
+	theme:Bind(indicator, { BackgroundColor3 = "IndicatorColor", BackgroundTransparency = "IndicatorT" })
+	local indicatorShadow = newShadow(indicator, {
+		BlurRadius = UDim.new(0, 6),
+		Offset = UDim2.fromOffset(0, 1),
+		Transparency = 0.9,
+		ShowBehindParent = false,
+	})
+	if indicatorShadow then
+		theme:Bind(indicatorShadow, { Color = "Shadow" })
+	end
+
+	local obj = { Value = nil, Frame = frame }
+	local labels = {}
+	for i, option in ipairs(options) do
+		local btn = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundTransparency = 1,
+			Position = UDim2.fromScale((i - 1) / count, 0),
+			Size = UDim2.fromScale(1 / count, 1),
+			ZIndex = 2,
+			Parent = frame,
+		})
+		labels[option] = label(theme, {
+			Text = tostring(option),
+			FontFace = Fonts.Medium,
+			TextSize = height >= 36 and 14 or 13,
+			Color = "Muted",
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Size = UDim2.fromScale(1, 1),
+			Parent = btn,
+		})
+		btn.MouseEnter:Connect(function()
+			if obj.Value ~= option then
+				theme:Set(labels[option], "TextColor3", "SubText", Ease.Hover)
+			end
+		end)
+		btn.MouseLeave:Connect(function()
+			if obj.Value ~= option then
+				theme:Set(labels[option], "TextColor3", "Muted", Ease.Hover)
+			end
+		end)
+		btn.MouseButton1Click:Connect(function()
+			obj:Set(option)
+		end)
+	end
+	function obj:Set(value, silent, instant)
+		local index = table.find(options, value)
+		if not index then
+			return
+		end
+		local changed = value ~= self.Value
+		if self.Value ~= nil and labels[self.Value] and self.Value ~= value then
+			theme:Set(labels[self.Value], "TextColor3", "Muted", Ease.Hover)
+		end
+		self.Value = value
+		theme:Set(labels[value], "TextColor3", "Text", if instant then nil else Ease.Hover)
+		local goal = UDim2.fromScale((index - 1) / count, 0)
+		if instant then
+			indicator.Position = goal
+		else
+			tween(indicator, Ease.Smooth, { Position = goal })
+		end
+		if changed and not silent then
+			fire(callback, value)
+		end
+	end
+	function obj:Get()
+		return self.Value
+	end
+	obj:Set(default or options[1], true, true)
+	return obj
+end
+
+function Section:Segmented(opts)
+	opts = opts or {}
+	local row, right = self:_row(opts, opts.Width or 170)
+	local obj = segmented(self.Window.Theme, right, opts.Options or {}, opts.Default, opts.Callback, 32)
+	return finish(obj, row)
+end
+
+function Page:Segmented(opts)
+	opts = opts or {}
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 40),
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+	})
+	local obj = segmented(self.Window.Theme, holder, opts.Options or {}, opts.Default, opts.Callback, 40)
+	return finish(obj, holder)
+end
+
+function Section:Item(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local row = self:_shell(56)
+	if not opts.Callback and not opts.Menu then
+		row:SetAttribute("IsleStatic", true)
+	end
+	if opts.Menu then
+		row.MouseButton2Click:Connect(function()
+			local items = type(opts.Menu) == "function" and opts.Menu() or opts.Menu
+			self.Window:OpenMenu(items)
+		end)
+	end
+	local left = 14
+	if opts.Image then
+		local image = create("ImageLabel", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 12, 0.5, 0),
+			Size = UDim2.fromOffset(32, 32),
+			Image = opts.Image,
+			Parent = row,
+			round(),
+		})
+		theme:Bind(image, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+		left = 56
+	end
+	local hasSub = opts.Subtitle and opts.Subtitle ~= ""
+	label(theme, {
+		Text = opts.Title or "",
+		FontFace = Fonts.Medium,
+		TextSize = 15,
+		Position = UDim2.fromOffset(left, hasSub and 10 or 0),
+		Size = UDim2.new(1, -(left + 110), 0, hasSub and 20 or 56),
+		Parent = row,
+	})
+	if hasSub then
+		label(theme, {
+			Text = opts.Subtitle,
+			TextSize = 13,
+			Color = "SubText",
+			Position = UDim2.fromOffset(left, 30),
+			Size = UDim2.new(1, -(left + 110), 0, 16),
+			Parent = row,
+		})
+	end
+	local rightLabel = label(theme, {
+		Text = opts.Right or "",
+		TextSize = 13,
+		Color = opts.RightColor or "Muted",
+		TextXAlignment = Enum.TextXAlignment.Right,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, opts.Callback and -32 or -14, 0.5, 0),
+		Size = UDim2.fromOffset(100, 20),
+		Parent = row,
+	})
+	if opts.Callback then
+		local arrow = chevron(theme, row, "Muted", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -14, 0.5, 0),
+			Rotation = 0,
+		})
+		row.MouseEnter:Connect(function()
+			tween(row, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") })
+			tween(arrow, Ease.Smooth, { Position = UDim2.new(1, -11, 0.5, 0) })
+		end)
+		row.MouseLeave:Connect(function()
+			tween(row, Ease.Hover, { BackgroundTransparency = 1 })
+			tween(arrow, Ease.Smooth, { Position = UDim2.new(1, -14, 0.5, 0) })
+		end)
+		row.MouseButton1Click:Connect(function()
+			fire(opts.Callback)
+		end)
+	end
+	return finish({
+		SetRight = function(_, value)
+			rightLabel.Text = value
+		end,
+	}, row)
+end
+
+function Section:Paragraph(opts)
+	if type(opts) == "string" then
+		opts = { Content = opts }
+	end
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local order = self:_next()
+	local outer = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = order,
+		Parent = self.Card,
+		list({ Padding = UDim.new(0, 0) }),
+	})
+	if order > 1 then
+		local divider = create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 1),
+			LayoutOrder = 1,
+			Parent = outer,
+		})
+		hairline(theme, divider, 14)
+	end
+	local frame = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		Parent = outer,
+		pad(12, 14, 14, 14),
+		list({ Padding = UDim.new(0, 4) }),
+	})
+	local title = label(theme, {
+		Text = opts.Title or "",
+		FontFace = Fonts.Medium,
+		TextSize = 15,
+		Size = UDim2.new(1, 0, 0, 20),
+		Visible = opts.Title ~= nil and opts.Title ~= "",
+		LayoutOrder = 1,
+		Parent = frame,
+	})
+	local body = label(theme, {
+		Text = opts.Content or "",
+		TextSize = 14,
+		Color = "SubText",
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		Parent = frame,
+	})
+	return finish({
+		Set = function(_, newTitle, newContent)
+			if newTitle then
+				title.Text = newTitle
+				title.Visible = newTitle ~= ""
+			end
+			if newContent then
+				body.Text = newContent
+			end
+		end,
+	}, outer)
+end
+
+function Section:Label(value)
+	local theme = self.Window.Theme
+	local row = self:_shell(48)
+	row:SetAttribute("IsleStatic", true)
+	local text = label(theme, {
+		Text = value or "",
+		TextSize = 14,
+		Color = "SubText",
+		Position = UDim2.fromOffset(14, 0),
+		Size = UDim2.new(1, -28, 1, 0),
+		Parent = row,
+	})
+	return finish({
+		Set = function(_, newValue)
+			text.Text = newValue
+		end,
+	}, row)
+end
+
+local function lens(theme, parent, colorKey, props)
+	local box = iconBox(parent, 16, props)
+	local ring = create("Frame", {
+		Position = UDim2.fromOffset(1, 1),
+		Size = UDim2.fromOffset(10, 10),
+		BackgroundTransparency = 1,
+		Parent = box,
+		round(),
+	})
+	local ringStroke = create("UIStroke", { Thickness = 1.5, Parent = ring })
+	theme:Bind(ringStroke, { Color = colorKey })
+	bar(theme, box, colorKey, UDim2.fromOffset(12, 12), UDim2.fromOffset(5, 1.6), 45)
+	return box, ringStroke
+end
+
+local function kbd(theme, parent, text, props)
+	local chip = create("Frame", {
+		Size = UDim2.new(0, 0, 0, 22),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = parent,
+		corner(7),
+		pad(0, 8, 0, 8),
+	})
+	for key, value in pairs(props or {}) do
+		chip[key] = value
+	end
+	theme:Bind(chip, { BackgroundColor3 = "HoverColor", BackgroundTransparency = "FieldT" })
+	label(theme, {
+		Text = text,
+		FontFace = Fonts.Medium,
+		TextSize = 12,
+		Color = "Muted",
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTruncate = Enum.TextTruncate.None,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		Parent = chip,
+	})
+	return chip
+end
+
+function Page:Field(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local ACTION_W = 96
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 54),
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+	})
+	local frame, focus = field(theme, holder, opts, 54, 16)
+	local box = label(theme, {
+		Class = "TextBox",
+		Text = "",
+		PlaceholderText = opts.Placeholder or "",
+		ClearTextOnFocus = false,
+		TextSize = 16,
+		Position = UDim2.fromOffset(18, 0),
+		Size = UDim2.new(1, -(18 + ACTION_W + 18), 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		ClipsDescendants = true,
+		Parent = frame,
+	})
+	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+
+	local action = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(ACTION_W, 38),
+		Parent = frame,
+		corner(11),
+	})
+	theme:Bind(action, { BackgroundColor3 = "Primary" })
+	local actionLabel = label(theme, {
+		Text = opts.Action or "Go",
+		FontFace = Fonts.SemiBold,
+		TextSize = 14,
+		Color = "PrimaryText",
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTruncate = Enum.TextTruncate.None,
+		Size = UDim2.fromScale(1, 1),
+		Parent = action,
+	})
+	local actionScale = create("UIScale", { Parent = action })
+
+	local secret
+	local function setSecret(value)
+		if value and not secret then
+			secret = secretControl(theme, box, frame, ACTION_W + 14)
+			box.Size = UDim2.new(1, -(18 + ACTION_W + 48), 1, 0)
+		elseif not value and secret then
+			secret:Destroy()
+			secret = nil
+			box.Size = UDim2.new(1, -(18 + ACTION_W + 18), 1, 0)
+		end
+	end
+	setSecret(opts.Secret)
+
+	local obj = { Loading = false, Box = box }
+	local pulse
+
+	function obj:SetLoading(loading)
+		self.Loading = loading
+		box.TextEditable = not loading
+		if pulse then
+			pulse:Cancel()
+			pulse = nil
+		end
+		if loading then
+			actionLabel.Text = opts.LoadingText or "…"
+			action.BackgroundTransparency = 0
+			pulse = tween(action, Ease.Pulse, { BackgroundTransparency = 0.5 })
+		else
+			actionLabel.Text = opts.Action or "Go"
+			tween(action, Ease.Hover, { BackgroundTransparency = 0 })
+		end
+	end
+	function obj:SetText(value)
+		box.Text = tostring(value or "")
+	end
+	function obj:GetText()
+		return box.Text
+	end
+	function obj:SetPlaceholder(value)
+		box.PlaceholderText = value
+	end
+	function obj:SetSecret(value)
+		setSecret(value)
+	end
+	function obj:Focus()
+		box:CaptureFocus()
+	end
+	function obj:Submit()
+		if not self.Loading then
+			if secret then
+				secret:Hide()
+			end
+			fire(opts.Callback, box.Text)
+		end
+	end
+
+	box.Focused:Connect(function()
+		focusStyle(theme, focus, true)
+	end)
+	box.FocusLost:Connect(function(enter)
+		focusStyle(theme, focus, false)
+		if enter then
+			obj:Submit()
+		end
+	end)
+	action.MouseEnter:Connect(function()
+		if not obj.Loading then
+			tween(action, Ease.Hover, { BackgroundTransparency = 0.1 })
+		end
+	end)
+	action.MouseLeave:Connect(function()
+		if not obj.Loading then
+			tween(action, Ease.Hover, { BackgroundTransparency = 0 })
+		end
+		tween(actionScale, Ease.Smooth, { Scale = 1 })
+	end)
+	action.MouseButton1Down:Connect(function()
+		tween(actionScale, Ease.Quick, { Scale = 0.95 })
+	end)
+	action.MouseButton1Up:Connect(function()
+		tween(actionScale, Ease.Smooth, { Scale = 1 })
+	end)
+	action.MouseButton1Click:Connect(function()
+		obj:Submit()
+	end)
+
+	if not self.FocusTarget then
+		self.FocusTarget = obj
+	end
+	return finish(obj, holder)
+end
+
+function Page:Search(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 42),
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+	})
+	local frame, focus = field(theme, holder, opts, 42, 13)
+	local _, lensStroke = lens(theme, frame, "Muted", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 14, 0.5, 0),
+	})
+	local box = label(theme, {
+		Class = "TextBox",
+		Text = "",
+		PlaceholderText = opts.Placeholder or "Search",
+		ClearTextOnFocus = false,
+		TextSize = 14,
+		Position = UDim2.fromOffset(40, 0),
+		Size = UDim2.new(1, -110, 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		ClipsDescendants = true,
+		Parent = frame,
+	})
+	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+	local hint = kbd(theme, frame, opts.Hint or "Ctrl F", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -10, 0.5, 0),
+	})
+
+	local obj = { Box = box }
+	function obj:Focus()
+		box:CaptureFocus()
+	end
+	function obj:SetText(value)
+		box.Text = tostring(value or "")
+	end
+	function obj:GetText()
+		return box.Text
+	end
+
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		fire(opts.Callback, box.Text)
+	end)
+	box.Focused:Connect(function()
+		focusStyle(theme, focus, true)
+		theme:Set(lensStroke, "Color", "Text", Ease.Hover)
+		hint.Visible = false
+	end)
+	box.FocusLost:Connect(function()
+		focusStyle(theme, focus, false)
+		theme:Set(lensStroke, "Color", "Muted", Ease.Hover)
+		hint.Visible = box.Text == ""
+	end)
+
+	if not self.FocusTarget then
+		self.FocusTarget = obj
+	end
+	return finish(obj, holder)
+end
+
+function Page:Profile(opts)
+	opts = opts or {}
+	local theme = self.Window.Theme
+	local card = create("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+		corner(20),
+		pad(18),
+		list({ Padding = UDim.new(0, 16) }),
+	})
+	theme:Bind(card, { BackgroundColor3 = "GroupColor", BackgroundTransparency = "GroupT" })
+
+	local function copyable(inst, getText, idleKey, hoverKey)
+		inst.MouseEnter:Connect(function()
+			theme:Set(inst, "TextColor3", hoverKey, Ease.Hover)
+		end)
+		inst.MouseLeave:Connect(function()
+			theme:Set(inst, "TextColor3", idleKey, Ease.Hover)
+		end)
+		inst.MouseButton1Click:Connect(function()
+			local text = getText()
+			if text and text ~= "" and opts.OnCopy then
+				fire(opts.OnCopy, text)
+			end
+		end)
+	end
+
+	local top = create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 64), LayoutOrder = 1, Parent = card })
+	local avatar = create("ImageLabel", {
+		Size = UDim2.fromOffset(64, 64),
+		Image = "",
+		Parent = top,
+		round(),
+	})
+	theme:Bind(avatar, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+	local displayName = label(theme, {
+		Class = "TextButton",
+		AutoButtonColor = false,
+		Text = "",
+		FontFace = Fonts.SemiBold,
+		TextSize = 22,
+		Position = UDim2.fromOffset(80, 8),
+		Size = UDim2.new(0, 0, 0, 26),
+		AutomaticSize = Enum.AutomaticSize.X,
+		TextTruncate = Enum.TextTruncate.None,
+		Parent = top,
+	})
+	local userName = label(theme, {
+		Class = "TextButton",
+		AutoButtonColor = false,
+		Text = "",
+		TextSize = 14,
+		Color = "SubText",
+		Position = UDim2.fromOffset(80, 36),
+		Size = UDim2.new(0, 0, 0, 18),
+		AutomaticSize = Enum.AutomaticSize.X,
+		TextTruncate = Enum.TextTruncate.None,
+		Parent = top,
+	})
+	local current = {}
+	copyable(displayName, function()
+		return current.DisplayName
+	end, "Text", "SubText")
+	copyable(userName, function()
+		return current.Name
+	end, "SubText", "Text")
+
+	local stats = create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 46), LayoutOrder = 2, Parent = card })
+
+	local function divider(order)
+		local d = create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 1), LayoutOrder = order, Parent = card })
+		hairline(theme, d, 0)
+	end
+	divider(3)
+
+	local function block(order, title)
+		local frame = create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = order,
+			Parent = card,
+			list({ Padding = UDim.new(0, 8) }),
+		})
+		label(theme, {
+			Text = title,
+			FontFace = Fonts.Medium,
+			TextSize = 13,
+			Color = "Muted",
+			Size = UDim2.new(1, 0, 0, 16),
+			LayoutOrder = 1,
+			Parent = frame,
+		})
+		return frame
+	end
+
+	local aboutBlock = block(4, "About")
+	local bio = label(theme, {
+		Text = "",
+		TextSize = 14,
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		Parent = aboutBlock,
+	})
+	local namesBlock = block(5, "Previous names")
+	local names = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		Parent = namesBlock,
+		list({ FillDirection = Enum.FillDirection.Horizontal, Wraps = true, Padding = UDim.new(0, 6) }),
+	})
+	local note = label(theme, {
+		Text = "",
+		TextSize = 12,
+		Color = "Muted",
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = false,
+		LayoutOrder = 6,
+		Parent = card,
+	})
+
+	local function reveal(inst, delay)
+		inst.TextTransparency = 1
+		task.delay(delay or 0, function()
+			if inst.Parent then
+				tween(inst, Ease.Slow, { TextTransparency = 0 })
+			end
+		end)
+	end
+
+	local function setStats(list_)
+		for _, child in ipairs(stats:GetChildren()) do
+			child:Destroy()
+		end
+		local n = math.max(#list_, 1)
+		for i, stat in ipairs(list_) do
+			local cell = create("TextButton", {
+				Text = "",
+				AutoButtonColor = false,
+				BackgroundTransparency = 1,
+				Position = UDim2.new((i - 1) / n, i == 1 and 0 or 2, 0, 0),
+				Size = UDim2.new(1 / n, i == 1 and -2 or -4, 1, 0),
+				Parent = stats,
+				corner(10),
+			})
+			if not stat.Callback then
+				cell:SetAttribute("IsleStatic", true)
+			end
+			theme:Bind(cell, { BackgroundColor3 = "HoverColor" })
+			local pad_ = stat.Callback and 8 or 0
+			local value = label(theme, {
+				Text = tostring(stat.Value or "—"),
+				FontFace = Fonts.SemiBold,
+				TextSize = 16,
+				Position = UDim2.fromOffset(pad_, 4),
+				Size = UDim2.new(1, -pad_ * 2, 0, 20),
+				Parent = cell,
+			})
+			local caption = label(theme, {
+				Text = stat.Label or "",
+				TextSize = 12,
+				Color = "Muted",
+				Position = UDim2.fromOffset(pad_, 25),
+				Size = UDim2.new(1, -pad_ * 2, 0, 16),
+				Parent = cell,
+			})
+			if stat.Callback then
+				local arrow = chevron(theme, cell, "Muted", {
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.new(1, -6, 0, 33),
+					Size = UDim2.fromOffset(10, 10),
+				})
+				arrow.Visible = false
+				cell.MouseEnter:Connect(function()
+					tween(cell, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") - 0.01 })
+					arrow.Visible = true
+				end)
+				cell.MouseLeave:Connect(function()
+					tween(cell, Ease.Hover, { BackgroundTransparency = 1 })
+					arrow.Visible = false
+				end)
+				cell.MouseButton1Click:Connect(function()
+					fire(stat.Callback)
+				end)
+			end
+			reveal(value, 0.04 * i)
+			reveal(caption, 0.04 * i)
+		end
+	end
+
+	local function setNames(list_)
+		for _, child in ipairs(names:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child:Destroy()
+			end
+		end
+		if not list_ or #list_ == 0 then
+			local none = label(theme, {
+				Text = "None",
+				TextSize = 14,
+				Color = "SubText",
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(0, 0, 0, 20),
+				TextTruncate = Enum.TextTruncate.None,
+				Parent = names,
+			})
+			reveal(none, 0.1)
+			return
+		end
+		for i, name in ipairs(list_) do
+			local chip = create("TextButton", {
+				Text = "",
+				AutoButtonColor = false,
+				Size = UDim2.new(0, 0, 0, 28),
+				AutomaticSize = Enum.AutomaticSize.X,
+				LayoutOrder = i,
+				Parent = names,
+				round(),
+				pad(0, 12, 0, 12),
+			})
+			theme:Bind(chip, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+			local text = label(theme, {
+				Text = name,
+				FontFace = Fonts.Medium,
+				TextSize = 13,
+				Color = "SubText",
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(0, 0, 1, 0),
+				TextTruncate = Enum.TextTruncate.None,
+				Parent = chip,
+			})
+			chip.MouseEnter:Connect(function()
+				theme:Set(text, "TextColor3", "Text", Ease.Hover)
+			end)
+			chip.MouseLeave:Connect(function()
+				theme:Set(text, "TextColor3", "SubText", Ease.Hover)
+			end)
+			chip.MouseButton1Click:Connect(function()
+				if opts.OnCopy then
+					fire(opts.OnCopy, name)
+				end
+			end)
+			reveal(text, 0.1 + math.min(i, 10) * 0.02)
+		end
+	end
+
+	local obj = {}
+	function obj:SetLoading(name)
+		current = {}
+		avatar.Image = ""
+		displayName.Text = name or "Loading"
+		theme:Set(displayName, "TextColor3", "Muted")
+		userName.Text = ""
+		bio.Text = "…"
+		setStats({
+			{ Label = "Joined", Value = "…" },
+			{ Label = "Age", Value = "…" },
+			{ Label = "Friends", Value = "…" },
+			{ Label = "Followers", Value = "…" },
+			{ Label = "Following", Value = "…" },
+		})
+		setNames({})
+		note.Visible = false
+	end
+	function obj:Set(data)
+		data = data or {}
+		current = { DisplayName = data.DisplayName, Name = data.Name }
+		avatar.Image = data.Image or ""
+		displayName.Text = data.DisplayName or ""
+		theme:Set(displayName, "TextColor3", "Text")
+		userName.Text = data.Name and ("@" .. data.Name) or ""
+		reveal(displayName)
+		reveal(userName, 0.03)
+		bio.Text = (data.Bio and data.Bio ~= "") and data.Bio or "No description"
+		theme:Set(bio, "TextColor3", (data.Bio and data.Bio ~= "") and "Text" or "SubText")
+		reveal(bio, 0.08)
+		setStats(data.Stats or {})
+		setNames(data.PreviousNames)
+		note.Text = data.Note or ""
+		note.Visible = data.Note ~= nil and data.Note ~= ""
+	end
+	obj:SetLoading()
+	return finish(obj, card)
+end
+
+function Page:Report(opts)
+	opts = opts or {}
+	local window = self.Window
+	local theme = window.Theme
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = self:_next(),
+		Parent = self.Content,
+		list({ Padding = UDim.new(0, 12) }),
+	})
+
+	local hero = create("Frame", {
+		Size = UDim2.new(1, 0, 0, 156),
+		ClipsDescendants = true,
+		LayoutOrder = 1,
+		Parent = holder,
+		corner(20),
+	})
+	theme:Bind(hero, { BackgroundColor3 = "GroupColor", BackgroundTransparency = "GroupT" })
+
+	local bloom = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 1, 40),
+		Size = UDim2.fromOffset(180, 180),
+		BackgroundTransparency = 1,
+		Parent = hero,
+		create("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+	})
+	local bloomShadow = newShadow(bloom, {
+		BlurRadius = UDim.new(0, 90),
+		Spread = UDim2.fromOffset(0, 0),
+		ShowBehindParent = true,
+		Transparency = 1,
+	})
+	local bloomCore = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 1, 1),
+		Size = UDim2.new(0.4, 0, 0, 3),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Parent = hero,
+		round(),
+		create("UIGradient", {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.5, 0),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+		}),
+	})
+	local coreShadow = newShadow(bloomCore, { BlurRadius = UDim.new(0, 14), ShowBehindParent = true, Transparency = 1 })
+
+	local tag = label(theme, {
+		Text = "",
+		FontFace = Fonts.Medium,
+		TextSize = 13,
+		Position = UDim2.fromOffset(22, 20),
+		Size = UDim2.new(1, -90, 0, 16),
+		Parent = hero,
+	})
+	local value = label(theme, {
+		Text = "",
+		FontFace = Fonts.SemiBold,
+		TextSize = 46,
+		Position = UDim2.fromOffset(20, 38),
+		Size = UDim2.new(1, -90, 0, 50),
+		TextTruncate = Enum.TextTruncate.None,
+		Parent = hero,
+	})
+	local caption = label(theme, {
+		Text = "",
+		TextSize = 14,
+		Color = "SubText",
+		Position = UDim2.fromOffset(22, 92),
+		Size = UDim2.new(1, -44, 0, 18),
+		Parent = hero,
+	})
+	local hint = label(theme, {
+		Text = "",
+		TextSize = 13,
+		Color = "Muted",
+		Position = UDim2.fromOffset(22, 112),
+		Size = UDim2.new(1, -44, 0, 16),
+		Parent = hero,
+	})
+	local details = create("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = false,
+		LayoutOrder = 2,
+		Parent = holder,
+		corner(20),
+		pad(18, 18, 18, 18),
+		list({ Padding = UDim.new(0, 12) }),
+	})
+	theme:Bind(details, { BackgroundColor3 = "GroupColor", BackgroundTransparency = "GroupT" })
+
+	local footer = label(theme, {
+		Text = "",
+		TextSize = 12,
+		Color = "Muted",
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = false,
+		LayoutOrder = 3,
+		Parent = holder,
+		pad(0, 6, 0, 6),
+	})
+
+	local motion = {}
+	local counter
+	local obj = {}
+
+	local function stopMotion()
+		for _, t in ipairs(motion) do
+			t:Cancel()
+		end
+		table.clear(motion)
+		if counter then
+			counter:Disconnect()
+			counter = nil
+		end
+	end
+
+	local function setBloom(colorKey, strength)
+		if bloomShadow then
+			theme:Set(bloomShadow, "Color", colorKey)
+			tween(bloomShadow, Ease.Slow, { Transparency = 1 - strength })
+		end
+		theme:Set(bloomCore, "BackgroundColor3", colorKey)
+		tween(bloomCore, Ease.Slow, { BackgroundTransparency = math.max(0, 1 - strength * 1.3) })
+		if coreShadow then
+			theme:Set(coreShadow, "Color", colorKey)
+			tween(coreShadow, Ease.Slow, { Transparency = 1 - strength })
+		end
+		bloom.Size = UDim2.fromOffset(110, 110)
+		tween(bloom, Ease.Slow, { Size = UDim2.fromOffset(180, 180) })
+	end
+
+	local statusDot = create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromOffset(22, 28),
+		Size = UDim2.fromOffset(6, 6),
+		BackgroundTransparency = 1,
+		Parent = hero,
+		round(),
+	})
+	local statusGlow = newShadow(statusDot, { BlurRadius = UDim.new(0, 10), ShowBehindParent = true, Transparency = 1 })
+	local statusPulse
+
+	local function setBadge(kind, colorKey)
+		if statusPulse then
+			statusPulse:Cancel()
+			statusPulse = nil
+		end
+		if not kind or kind == "idle" then
+			statusDot.BackgroundTransparency = 1
+			if statusGlow then
+				statusGlow.Transparency = 1
+			end
+			tag.Position = UDim2.fromOffset(22, 20)
+			return
+		end
+		tag.Position = UDim2.fromOffset(35, 20)
+		theme:Set(statusDot, "BackgroundColor3", colorKey)
+		statusDot.BackgroundTransparency = 0
+		if statusGlow then
+			theme:Set(statusGlow, "Color", colorKey)
+			statusGlow.Transparency = 0.3
+			statusPulse = tween(statusGlow, Ease.Pulse, { Transparency = 0.75 })
+		end
+	end
+
+	local function reveal(inst, delay)
+		inst.TextTransparency = 1
+		task.delay(delay or 0, function()
+			if inst.Parent then
+				tween(inst, Ease.Slow, { TextTransparency = 0 })
+			end
+		end)
+	end
+
+	local function clearDetails()
+		for _, child in ipairs(details:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child:Destroy()
+			end
+		end
+		details.Visible = false
+	end
+
+	local function setFooter(text)
+		footer.Text = text or ""
+		footer.Visible = text ~= nil and text ~= ""
+		if footer.Visible then
+			reveal(footer, 0.2)
+		end
+	end
+
+	local function bigValue(big)
+		value.TextSize = big and 46 or 22
+		value.FontFace = big and Fonts.SemiBold or Fonts.Medium
+	end
+
+	function obj:SetEmpty(message, sub)
+		stopMotion()
+		clearDetails()
+		setFooter(nil)
+		setBadge("idle")
+		tag.Text = ""
+		bigValue(false)
+		theme:Set(value, "TextColor3", "Text")
+		value.Text = message or opts.EmptyText or "Nothing yet"
+		caption.Text = sub or opts.EmptyHint or ""
+		hint.Text = ""
+		reveal(value)
+		reveal(caption, 0.05)
+		setBloom("Accent", 0.3)
+	end
+
+	function obj:SetStatus(text)
+		caption.Text = text or ""
+	end
+
+	function obj:SetLoading(text)
+		stopMotion()
+		clearDetails()
+		setFooter(nil)
+		setBadge(nil)
+		tag.Text = ""
+		bigValue(true)
+		theme:Set(value, "TextColor3", "Muted")
+		value.Text = "···"
+		value.TextTransparency = 0
+		caption.Text = text or opts.LoadingText or "Checking"
+		caption.TextTransparency = 0
+		hint.Text = ""
+		table.insert(motion, tween(value, Ease.Pulse, { TextTransparency = 0.6 }))
+		setBloom("Accent", 0.5)
+		if bloomShadow then
+			table.insert(motion, tween(bloomShadow, Ease.Pulse, { Transparency = 0.85 }))
+		end
+	end
+
+	function obj:Set(data)
+		stopMotion()
+		clearDetails()
+		data = data or {}
+		local tone = data.Tone or "Accent"
+
+		tag.Text = data.Tag or ""
+		theme:Set(tag, "TextColor3", tone)
+		reveal(tag)
+
+		bigValue(true)
+		theme:Set(value, "TextColor3", "Text")
+		value.TextTransparency = 0
+		if type(data.Value) == "number" then
+			local target = data.Value
+			local start = os.clock()
+			value.Text = "0"
+			counter = RunService.RenderStepped:Connect(function()
+				local t = math.min((os.clock() - start) / 0.8, 1)
+				local e = 1 - (1 - t) ^ 4
+				value.Text = commas(math.floor(target * e + 0.5))
+				if t >= 1 and counter then
+					counter:Disconnect()
+					counter = nil
+				end
+			end)
+		else
+			value.Text = tostring(data.Value or "")
+			reveal(value)
+		end
+
+		caption.Text = data.Caption or ""
+		hint.Text = data.Hint or ""
+		reveal(caption, 0.05)
+		reveal(hint, 0.08)
+
+		setBadge(({ Safe = "check", Danger = "alert", Warning = "alert" })[tone], tone)
+		setBloom(tone, 0.75)
+
+		local order = 0
+		local function nextOrder()
+			order += 1
+			return order
+		end
+		local function heading(text, right)
+			local row = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 16),
+				LayoutOrder = nextOrder(),
+				Parent = details,
+			})
+			local h = label(theme, {
+				Text = text,
+				FontFace = Fonts.Medium,
+				TextSize = 13,
+				Color = "Muted",
+				Size = UDim2.new(1, -80, 1, 0),
+				Parent = row,
+			})
+			reveal(h, 0.1)
+			if right then
+				local r = label(theme, {
+					Text = right,
+					FontFace = Fonts.Medium,
+					TextSize = 13,
+					TextXAlignment = Enum.TextXAlignment.Right,
+					AnchorPoint = Vector2.new(1, 0),
+					Position = UDim2.fromScale(1, 0),
+					Size = UDim2.new(0, 80, 1, 0),
+					Parent = row,
+				})
+				reveal(r, 0.1)
+			end
+		end
+		local function divider()
+			local d = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 1),
+				LayoutOrder = nextOrder(),
+				Parent = details,
+			})
+			hairline(theme, d, 0)
+		end
+
+		local sections = 0
+		local function begin()
+			if sections > 0 then
+				divider()
+			end
+			sections += 1
+		end
+
+		if data.Meter then
+			begin()
+			local meter = data.Meter
+			local pct = math.clamp((meter.Value or 0) / (meter.Max or 100), 0, 1)
+			local meterTone = meter.Tone or tone
+			heading(meter.Label or "Score", tostring(meter.Value or 0) .. " / " .. tostring(meter.Max or 100))
+			local track = create("Frame", {
+				Size = UDim2.new(1, 0, 0, 8),
+				LayoutOrder = nextOrder(),
+				Parent = details,
+				round(),
+			})
+			theme:Bind(track, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+			local fillBar = create("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, Parent = track, round() })
+			theme:Bind(fillBar, { BackgroundColor3 = meterTone })
+			local glow = newShadow(fillBar, { BlurRadius = UDim.new(0, 12), Transparency = 0.55, ShowBehindParent = true })
+			if glow then
+				theme:Bind(glow, { Color = meterTone })
+			end
+			task.delay(0.15, function()
+				if fillBar.Parent then
+					tween(fillBar, Ease.Slow, { Size = UDim2.fromScale(math.max(pct, 0.02), 1) })
+				end
+			end)
+			if meter.Caption then
+				local c = label(theme, {
+					Text = meter.Caption,
+					TextSize = 13,
+					Color = "SubText",
+					Size = UDim2.new(1, 0, 0, 16),
+					LayoutOrder = nextOrder(),
+					Parent = details,
+				})
+				reveal(c, 0.15)
+			end
+		end
+
+		if data.Chips and #data.Chips > 0 then
+			begin()
+			heading(data.ChipsTitle or "Exposed data")
+			local chips = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				LayoutOrder = nextOrder(),
+				Parent = details,
+				list({
+					FillDirection = Enum.FillDirection.Horizontal,
+					Wraps = true,
+					Padding = UDim.new(0, 6),
+				}),
+			})
+			for i, chipText in ipairs(data.Chips) do
+				local chip = create("Frame", {
+					Size = UDim2.new(0, 0, 0, 28),
+					AutomaticSize = Enum.AutomaticSize.X,
+					LayoutOrder = i,
+					Parent = chips,
+					round(),
+					pad(0, 12, 0, 12),
+				})
+				theme:Bind(chip, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+				local chipLabel = label(theme, {
+					Text = chipText,
+					FontFace = Fonts.Medium,
+					TextSize = 13,
+					Color = "SubText",
+					AutomaticSize = Enum.AutomaticSize.X,
+					Size = UDim2.new(0, 0, 1, 0),
+					TextTruncate = Enum.TextTruncate.None,
+					Parent = chip,
+				})
+				reveal(chipLabel, 0.1 + math.min(i, 10) * 0.02)
+			end
+		end
+
+		local groups = {}
+		if data.Rows and #data.Rows > 0 then
+			table.insert(groups, { Title = data.RowsTitle or "Sources", Count = data.RowsCount, Rows = data.Rows })
+		end
+		for _, group in ipairs(data.Sections or {}) do
+			if group.Rows and #group.Rows > 0 then
+				table.insert(groups, group)
+			end
+		end
+		for _, group in ipairs(groups) do
+			begin()
+			heading(group.Title or "", group.Count)
+			local rows = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				LayoutOrder = nextOrder(),
+				Parent = details,
+				list({ Padding = UDim.new(0, 0) }),
+			})
+			for i, rowData in ipairs(group.Rows) do
+				local hasSub = rowData.Subtitle and rowData.Subtitle ~= ""
+				local row = create("Frame", {
+					BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 0, hasSub and 54 or 40),
+					LayoutOrder = i,
+					Parent = rows,
+				})
+				if i > 1 then
+					hairline(theme, row, 0)
+				end
+				local delay = 0.12 + math.min(i, 12) * 0.03
+				local title = label(theme, {
+					Text = rowData.Title or "",
+					FontFace = Fonts.Medium,
+					TextSize = 14,
+					Position = UDim2.fromOffset(0, hasSub and 10 or 0),
+					Size = UDim2.new(1, -116, 0, hasSub and 18 or 40),
+					Parent = row,
+				})
+				local right = label(theme, {
+					Text = rowData.Right or "",
+					TextSize = 13,
+					Color = rowData.RightColor or "Muted",
+					TextXAlignment = Enum.TextXAlignment.Right,
+					AnchorPoint = Vector2.new(1, 0),
+					Position = UDim2.new(1, 0, 0, hasSub and 10 or 0),
+					Size = UDim2.fromOffset(110, hasSub and 18 or 40),
+					Parent = row,
+				})
+				reveal(title, delay)
+				reveal(right, delay)
+				if hasSub then
+					local sub = label(theme, {
+						Text = rowData.Subtitle,
+						TextSize = 13,
+						Color = "SubText",
+						Position = UDim2.fromOffset(0, 29),
+						Size = UDim2.new(1, 0, 0, 16),
+						Parent = row,
+					})
+					reveal(sub, delay)
+				end
+			end
+		end
+
+		if data.Tips and #data.Tips > 0 then
+			begin()
+			heading(data.TipsTitle or "What to do")
+			local tips = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				LayoutOrder = nextOrder(),
+				Parent = details,
+				list({ Padding = UDim.new(0, 8) }),
+			})
+			for i, tipText in ipairs(data.Tips) do
+				local tip = create("Frame", {
+					BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 0, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+					LayoutOrder = i,
+					Parent = tips,
+				})
+				local mark = create("Frame", { Position = UDim2.fromOffset(1, 7), Size = UDim2.fromOffset(5, 5), Parent = tip, round() })
+				theme:Bind(mark, { BackgroundColor3 = tone })
+				local tipLabel = label(theme, {
+					Text = tipText,
+					TextSize = 14,
+					TextWrapped = true,
+					TextTruncate = Enum.TextTruncate.None,
+					TextYAlignment = Enum.TextYAlignment.Top,
+					Position = UDim2.fromOffset(16, 0),
+					Size = UDim2.new(1, -16, 0, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+					Parent = tip,
+				})
+				reveal(tipLabel, 0.15 + i * 0.04)
+			end
+		end
+
+		if data.Actions and #data.Actions > 0 then
+			begin()
+			local actions = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 34),
+				LayoutOrder = nextOrder(),
+				Parent = details,
+				list({
+					FillDirection = Enum.FillDirection.Horizontal,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					Padding = UDim.new(0, 8),
+				}),
+			})
+			for i, action in ipairs(data.Actions) do
+				local btn = create("TextButton", {
+					Text = "",
+					AutoButtonColor = false,
+					Size = UDim2.new(0, 0, 0, 34),
+					AutomaticSize = Enum.AutomaticSize.X,
+					LayoutOrder = i,
+					Parent = actions,
+					corner(10),
+					pad(0, 14, 0, 14),
+				})
+				theme:Bind(btn, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+				label(theme, {
+					Text = action.Title or "",
+					FontFace = Fonts.Medium,
+					TextSize = 13,
+					TextXAlignment = Enum.TextXAlignment.Center,
+					TextTruncate = Enum.TextTruncate.None,
+					AutomaticSize = Enum.AutomaticSize.X,
+					Size = UDim2.new(0, 0, 1, 0),
+					Parent = btn,
+				})
+				btn.MouseEnter:Connect(function()
+					tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("FieldT") - 0.03 })
+				end)
+				btn.MouseLeave:Connect(function()
+					tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("FieldT") })
+				end)
+				btn.MouseButton1Click:Connect(function()
+					fire(action.Callback)
+				end)
+			end
+		end
+
+		details.Visible = order > 0
+		setFooter(data.Footer)
+	end
+
+	obj:SetEmpty()
+	return finish(obj, holder)
+end
+
+return Isle
