@@ -5,7 +5,9 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "3.0.0" }
+local Isle = { Version = "3.1.0" }
+Isle.GrainId = "rbxassetid://0"
+local GRAIN_STRENGTH = 0.55
 
 local FONT = "rbxasset://fonts/families/BuilderSans.json"
 local Fonts = {
@@ -917,6 +919,23 @@ function Isle.new(options)
 		theme:Bind(cardShadow, { Color = "Shadow" })
 	end
 
+	local grain
+	if Isle.GrainId and Isle.GrainId ~= "" and Isle.GrainId ~= "rbxassetid://0" then
+		grain = create("ImageLabel", {
+			Name = "Grain",
+			Image = Isle.GrainId,
+			ScaleType = Enum.ScaleType.Tile,
+			TileSize = UDim2.fromOffset(192, 192),
+			BackgroundTransparency = 1,
+			ImageTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 1,
+			Parent = card,
+			corner(RADIUS),
+		})
+		theme:Bind(grain, { ImageColor3 = "Dot" })
+	end
+
 	local dots
 	if options.Grid ~= false then
 		dots = newDots(theme, card, W, window.MaxHeight)
@@ -1005,6 +1024,59 @@ function Isle.new(options)
 		Parent = brand,
 	})
 
+	local function makeTooltip(anchor, text)
+		local tip = create("Frame", {
+			Name = "Tooltip",
+			AnchorPoint = Vector2.new(0.5, 0),
+			BackgroundTransparency = 1,
+			Size = UDim2.new(0, 0, 0, 24),
+			AutomaticSize = Enum.AutomaticSize.X,
+			Visible = false,
+			ZIndex = 80,
+			Parent = card,
+			corner(8),
+			pad(0, 9, 0, 9),
+		})
+		theme:Bind(tip, { BackgroundColor3 = "Elevated" })
+		local tipStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = tip })
+		theme:Bind(tipStroke, { Color = "StrokeColor", Transparency = "StrokeT" })
+		local tipLabel = label(theme, {
+			Text = text,
+			FontFace = Fonts.Medium,
+			TextSize = 12,
+			Color = "SubText",
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextTruncate = Enum.TextTruncate.None,
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 1, 0),
+			ZIndex = 81,
+			Parent = tip,
+		})
+		local token = 0
+		anchor.MouseEnter:Connect(function()
+			token += 1
+			local mine = token
+			task.delay(0.35, function()
+				if mine ~= token or not anchor.Parent then
+					return
+				end
+				local rel = (anchor.AbsolutePosition - card.AbsolutePosition) / (scale.Scale > 0 and scale.Scale or 1)
+				tip.Position = UDim2.fromOffset(rel.X + anchor.AbsoluteSize.X / 2 / (scale.Scale > 0 and scale.Scale or 1), rel.Y + 34)
+				tip.Visible = true
+				tip.BackgroundTransparency = 1
+				tipLabel.TextTransparency = 1
+				tipStroke.Transparency = 1
+				tween(tip, Ease.Hover, { BackgroundTransparency = 0 })
+				tween(tipLabel, Ease.Hover, { TextTransparency = 0 })
+				tween(tipStroke, Ease.Hover, { Transparency = theme:Get("StrokeT") })
+			end)
+		end)
+		anchor.MouseLeave:Connect(function()
+			token += 1
+			tip.Visible = false
+		end)
+	end
+
 	local backBtn = create("TextButton", {
 		Text = "",
 		AutoButtonColor = false,
@@ -1032,6 +1104,7 @@ function Isle.new(options)
 	backBtn.MouseButton1Click:Connect(function()
 		window:Back()
 	end)
+	makeTooltip(backBtn, "Back")
 
 	function window:_updateBack()
 		local show = #self._history > 0
@@ -1072,7 +1145,7 @@ function Isle.new(options)
 		}),
 	})
 
-	local function iconButton(order)
+	local function iconButton(order, tip)
 		local btn = create("TextButton", {
 			Text = "",
 			AutoButtonColor = false,
@@ -1096,10 +1169,13 @@ function Isle.new(options)
 				theme:Set(part[1], part[2], "Muted", Ease.Hover)
 			end
 		end)
+		if tip then
+			makeTooltip(btn, tip)
+		end
 		return btn, parts
 	end
 
-	local themeBtn, themeParts = iconButton(1)
+	local themeBtn, themeParts = iconButton(1, "Theme")
 	local ring = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
@@ -1122,7 +1198,7 @@ function Isle.new(options)
 	table.insert(themeParts, { ringStroke, "Color" })
 	table.insert(themeParts, { ringHalf, "BackgroundColor3" })
 
-	local closeBtn, closeParts = iconButton(2)
+	local closeBtn, closeParts = iconButton(2, "Hide")
 	local cross = crossIcon(theme, closeBtn, "Muted", 11, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
@@ -1229,6 +1305,9 @@ function Isle.new(options)
 		end
 		local handleT = theme:Get("HandleT") - (handleHover and 0.25 or 0)
 		handle.BackgroundTransparency = 1 - (1 - handleT) * v
+		if grain then
+			grain.ImageTransparency = 1 - GRAIN_STRENGTH * v
+		end
 		local e = smooth(v)
 		scale.Scale = (0.97 + 0.03 * e) * window.UserScale
 		islandScale.Scale = window.UserScale
@@ -1474,7 +1553,10 @@ function Isle.new(options)
 				end
 				local a = page._alpha
 				page.Canvas.Visible = a > 0.003
-				page.Canvas.Position = UDim2.fromOffset(0, (1 - smooth(a)) * (goal == 1 and 8 or -4))
+				local dir = window._navDir or 1
+				local slide = 30 * (1 - smooth(a))
+				local off = goal == 1 and slide * dir or -slide * dir
+				page.Canvas.Position = UDim2.fromOffset(off, 0)
 			end
 			local groupT = 1 - page._alpha * window._vis
 			if math.abs(page.Canvas.GroupTransparency - groupT) > 0.0005 then
@@ -1999,6 +2081,7 @@ function Window:SelectPage(page, instant, fromBack)
 	if self.ActivePage == page then
 		return
 	end
+	self._navDir = fromBack and -1 or 1
 	local theme = self.Theme
 	local old = self.ActivePage
 	if old and not fromBack then
@@ -2068,6 +2151,77 @@ local function finish(obj, row)
 	return obj
 end
 
+local function tileIcon(theme, parent, spec, colorKey)
+	local holder = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(24, 24),
+		Position = UDim2.fromOffset(16, 16),
+		Parent = parent,
+	})
+	if type(spec) == "number" or (type(spec) == "string" and (spec:match("^%d+$") or spec:match("^rbxassetid"))) then
+		local img = create("ImageLabel", {
+			Image = type(spec) == "number" and ("rbxassetid://" .. spec) or (spec:match("^%d+$") and ("rbxassetid://" .. spec) or spec),
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Parent = holder,
+		})
+		theme:Bind(img, { ImageColor3 = colorKey })
+		return holder
+	end
+	local function ring(size, pos)
+		local r = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = pos or UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(size, size),
+			BackgroundTransparency = 1,
+			Parent = holder,
+			round(),
+		})
+		local st = create("UIStroke", { Thickness = 1.6, Parent = r })
+		theme:Bind(st, { Color = colorKey })
+		return r
+	end
+	local function box(w, h, pos, radius)
+		local b = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = pos or UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(w, h),
+			BackgroundTransparency = 1,
+			Parent = holder,
+			create("UICorner", { CornerRadius = UDim.new(0, radius or 4) }),
+		})
+		local st = create("UIStroke", { Thickness = 1.6, Parent = b })
+		theme:Bind(st, { Color = colorKey })
+		return b
+	end
+	if spec == "search" then
+		ring(13, UDim2.fromOffset(10, 10))
+		bar(theme, holder, colorKey, UDim2.fromOffset(18, 18), UDim2.fromOffset(6, 1.8), 45)
+	elseif spec == "clock" then
+		ring(18)
+		bar(theme, holder, colorKey, UDim2.fromOffset(12, 10), UDim2.fromOffset(5, 1.8), 0)
+		bar(theme, holder, colorKey, UDim2.fromOffset(12, 10), UDim2.fromOffset(1.8, 5), 0)
+	elseif spec == "key" then
+		ring(10, UDim2.fromOffset(8, 8))
+		bar(theme, holder, colorKey, UDim2.fromOffset(15, 15), UDim2.fromOffset(9, 1.8), 45)
+		bar(theme, holder, colorKey, UDim2.fromOffset(18, 16), UDim2.fromOffset(3.5, 1.8), -45)
+	elseif spec == "user" then
+		ring(9, UDim2.fromOffset(12, 8))
+		box(15, 12, UDim2.fromOffset(12, 23), 7)
+	elseif spec == "shield" then
+		box(15, 18, UDim2.fromOffset(12, 11), 6)
+	elseif spec == "chat" then
+		box(18, 13, UDim2.fromOffset(12, 10), 5)
+		bar(theme, holder, colorKey, UDim2.fromOffset(9, 18), UDim2.fromOffset(4, 4), 45)
+	elseif spec == "link" then
+		box(11, 7, UDim2.fromOffset(9, 9), 4)
+		box(11, 7, UDim2.fromOffset(15, 15), 4)
+	else
+		ring(8)
+	end
+	return holder
+end
+
 function Page:Tiles(tiles)
 	local theme = self.Window.Theme
 	local holder = create("Frame", {
@@ -2077,7 +2231,7 @@ function Page:Tiles(tiles)
 		LayoutOrder = self:_next(),
 		Parent = self.Content,
 		create("UIGridLayout", {
-			CellSize = UDim2.new(0.5, -6, 0, 104),
+			CellSize = UDim2.new(0.5, -6, 0, 116),
 			CellPadding = UDim2.fromOffset(12, 12),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
@@ -2092,11 +2246,16 @@ function Page:Tiles(tiles)
 		})
 		theme:Bind(btn, { BackgroundColor3 = "GroupColor", BackgroundTransparency = "GroupT" })
 		local btnScale = create("UIScale", { Parent = btn })
+		local titleY = 16
+		if tile.Icon then
+			tileIcon(theme, btn, tile.Icon, "Text")
+			titleY = 52
+		end
 		label(theme, {
 			Text = tile.Title or "",
 			FontFace = Fonts.SemiBold,
 			TextSize = 16,
-			Position = UDim2.fromOffset(16, 16),
+			Position = UDim2.fromOffset(16, titleY),
 			Size = UDim2.new(1, -48, 0, 20),
 			Parent = btn,
 		})
@@ -2107,8 +2266,8 @@ function Page:Tiles(tiles)
 			TextWrapped = true,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextYAlignment = Enum.TextYAlignment.Top,
-			Position = UDim2.fromOffset(16, 42),
-			Size = UDim2.new(1, -32, 1, -56),
+			Position = UDim2.fromOffset(16, titleY + 24),
+			Size = UDim2.new(1, -32, 1, -(titleY + 38)),
 			Parent = btn,
 		})
 		local arrow = chevron(theme, btn, "Muted", {
@@ -2417,10 +2576,13 @@ end
 
 local function focusStyle(theme, stroke, active)
 	if active then
+		theme:Set(stroke, "Color", "Accent", Ease.Hover)
 		theme:Set(stroke, "Transparency", "FocusT", Ease.Hover)
+		tween(stroke, Ease.Hover, { Thickness = 1.5 })
 	else
 		theme:Unbind(stroke, "Transparency")
-		tween(stroke, Ease.Hover, { Transparency = 1 })
+		theme:Set(stroke, "Color", "StrokeColor", Ease.Hover)
+		tween(stroke, Ease.Hover, { Transparency = 1, Thickness = 1 })
 	end
 end
 
