@@ -7,6 +7,7 @@ local GuiService = game:GetService("GuiService")
 
 local Isle = { Version = "3.1.0" }
 Isle.GrainId = "rbxassetid://0"
+Isle.Icons = {}
 local GRAIN_STRENGTH = 0.55
 
 local FONT = "rbxasset://fonts/families/BuilderSans.json"
@@ -1512,7 +1513,9 @@ function Isle.new(options)
 
 		local active = window.ActivePage
 		local wanted = window.MinHeight
-		if active then
+		if active and active.FullHeight then
+			wanted = limit
+		elseif active then
 			wanted = HEADER + active.Content.AbsoluteSize.Y / s
 		end
 		wanted = math.clamp(wanted, window.MinHeight, limit)
@@ -2151,13 +2154,17 @@ local function finish(obj, row)
 	return obj
 end
 
-local function tileIcon(theme, parent, spec, colorKey)
+local function tileIcon(theme, parent, spec, colorKey, size, position)
 	local holder = create("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(24, 24),
-		Position = UDim2.fromOffset(16, 16),
+		Size = UDim2.fromOffset(size or 24, size or 24),
+		Position = position or UDim2.fromOffset(16, 16),
 		Parent = parent,
 	})
+	local mapped = type(spec) == "string" and Isle.Icons[spec]
+	if mapped and mapped ~= 0 and mapped ~= "0" and mapped ~= "rbxassetid://0" then
+		spec = mapped
+	end
 	if type(spec) == "number" or (type(spec) == "string" and (spec:match("^%d+$") or spec:match("^rbxassetid"))) then
 		local img = create("ImageLabel", {
 			Image = type(spec) == "number" and ("rbxassetid://" .. spec) or (spec:match("^%d+$") and ("rbxassetid://" .. spec) or spec),
@@ -4178,6 +4185,770 @@ function Page:Report(opts)
 
 	obj:SetEmpty()
 	return finish(obj, holder)
+end
+
+function Window:Prompt(opts)
+	opts = opts or {}
+	local theme = self.Theme
+	local dim = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = BLACK,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 90,
+		Parent = self.Gui,
+	})
+	local card = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(300, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		ZIndex = 91,
+		Parent = self.Gui,
+		corner(18),
+		pad(18),
+		list({ Padding = UDim.new(0, 12) }),
+	})
+	theme:Bind(card, { BackgroundColor3 = "Elevated" })
+	local cardStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = card })
+	theme:Bind(cardStroke, { Color = "StrokeColor", Transparency = "StrokeT" })
+	local cardScale = create("UIScale", { Scale = self.UserScale * 0.94, Parent = card })
+	label(theme, {
+		Text = opts.Title or "Enter",
+		FontFace = Fonts.SemiBold,
+		TextSize = 16,
+		Size = UDim2.new(1, 0, 0, 20),
+		LayoutOrder = 1,
+		ZIndex = 92,
+		Parent = card,
+	})
+	if opts.Description then
+		label(theme, {
+			Text = opts.Description,
+			TextSize = 13,
+			Color = "SubText",
+			TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.None,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = 2,
+			ZIndex = 92,
+			Parent = card,
+		})
+	end
+	local fieldFrame = create("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
+	local box = create("Frame", { Size = UDim2.fromScale(1, 1), ZIndex = 92, Parent = fieldFrame, corner(11) })
+	theme:Bind(box, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+	local boxStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = box })
+	theme:Bind(boxStroke, { Color = "StrokeColor" })
+	local input = label(theme, {
+		Class = "TextBox",
+		Text = opts.Default or "",
+		PlaceholderText = opts.Placeholder or "",
+		ClearTextOnFocus = false,
+		TextSize = 15,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -24, 1, 0),
+		TextTruncate = Enum.TextTruncate.None,
+		ClipsDescendants = true,
+		ZIndex = 93,
+		Parent = box,
+	})
+	theme:Bind(input, { PlaceholderColor3 = "Muted" })
+	input.Focused:Connect(function()
+		theme:Set(boxStroke, "Color", "Accent", Ease.Hover)
+		tween(boxStroke, Ease.Hover, { Transparency = theme:Get("FocusT"), Thickness = 1.5 })
+	end)
+	input.FocusLost:Connect(function()
+		tween(boxStroke, Ease.Hover, { Transparency = 1, Thickness = 1 })
+	end)
+
+	local row = create("Frame", {
+		Size = UDim2.new(1, 0, 0, 38),
+		BackgroundTransparency = 1,
+		LayoutOrder = 4,
+		ZIndex = 92,
+		Parent = card,
+		list({ FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 8) }),
+	})
+
+	local closed = false
+	local function close(value)
+		if closed then
+			return
+		end
+		closed = true
+		tween(cardScale, Ease.Hover, { Scale = self.UserScale * 0.94 })
+		tween(card, Ease.Hover, { BackgroundTransparency = 1 })
+		tween(cardStroke, Ease.Hover, { Transparency = 1 })
+		tween(dim, Ease.Hover, { BackgroundTransparency = 1 })
+		for _, inst in ipairs(card:GetDescendants()) do
+			if inst:IsA("TextLabel") or inst:IsA("TextBox") or inst:IsA("TextButton") then
+				tween(inst, Ease.Hover, { TextTransparency = 1 })
+			end
+		end
+		task.delay(0.2, function()
+			dim:Destroy()
+			card:Destroy()
+		end)
+		if value ~= nil and opts.Callback then
+			fire(opts.Callback, value)
+		end
+	end
+
+	local function makeButton(text, primary, order)
+		local btn = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
+			LayoutOrder = order,
+			ZIndex = 92,
+			Parent = row,
+			corner(10),
+			pad(0, 16, 0, 16),
+		})
+		if primary then
+			theme:Bind(btn, { BackgroundColor3 = "Primary" })
+		else
+			theme:Bind(btn, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+		end
+		label(theme, {
+			Text = text,
+			FontFace = Fonts.Medium,
+			TextSize = 14,
+			Color = primary and "PrimaryText" or "Text",
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextTruncate = Enum.TextTruncate.None,
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 1, 0),
+			ZIndex = 93,
+			Parent = btn,
+		})
+		return btn
+	end
+
+	local cancel = makeButton(opts.Cancel or "Cancel", false, 1)
+	local ok = makeButton(opts.Action or "OK", true, 2)
+	cancel.MouseButton1Click:Connect(function()
+		close(nil)
+	end)
+	ok.MouseButton1Click:Connect(function()
+		close(input.Text)
+	end)
+	input.FocusLost:Connect(function(enter)
+		if enter then
+			close(input.Text)
+		end
+	end)
+	dim.MouseButton1Click:Connect(function()
+		close(nil)
+	end)
+
+	tween(cardScale, Ease.Smooth, { Scale = self.UserScale })
+	tween(dim, Ease.Smooth, { BackgroundTransparency = 0.5 })
+	task.defer(function()
+		if not closed then
+			input:CaptureFocus()
+		end
+	end)
+	return close
+end
+
+function Page:Canvas(opts)
+	opts = opts or {}
+	self.FullHeight = true
+	local window = self.Window
+	local theme = window.Theme
+	local types = opts.Types or {}
+	local NODE_W, NODE_H = 166, 58
+
+	local function typeOf(key)
+		return types[key] or { Label = key or "Node", Color = theme:Get("Accent"), Icon = nil }
+	end
+	local function scaleNow()
+		return window.Scale.Scale > 0 and window.Scale.Scale or 1
+	end
+	local function changed()
+		if opts.OnChange then
+			fire(opts.OnChange)
+		end
+	end
+
+	local viewport = create("Frame", {
+		Name = "Canvas",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ClipsDescendants = true,
+		Parent = self.Canvas,
+	})
+	local bg = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 1,
+		Parent = viewport,
+	})
+	local world = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 2, Parent = viewport })
+	local edgesLayer = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 1, Parent = world })
+	local nodesLayer = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 2, Parent = world })
+
+	local nodes = {}
+	local edges = {}
+	local pan = Vector2.zero
+	local selected
+	local nodeSeq, edgeSeq = 0, 0
+	local grabbed
+	local linkCb
+
+	local function applyPan()
+		world.Position = UDim2.fromOffset(pan.X, pan.Y)
+	end
+
+	local function nodeCenter(node)
+		return Vector2.new(node.X + NODE_W / 2, node.Y + NODE_H / 2)
+	end
+
+	local function placeEdge(edge)
+		local a, b = nodes[edge.From], nodes[edge.To]
+		if not a or not b then
+			return
+		end
+		local ca, cb = nodeCenter(a), nodeCenter(b)
+		local d = cb - ca
+		local len = d.Magnitude
+		local mid = (ca + cb) / 2
+		edge.Line.Size = UDim2.fromOffset(math.max(len, 1), 1.6)
+		edge.Line.Position = UDim2.fromOffset(mid.X, mid.Y)
+		edge.Line.Rotation = math.deg(math.atan2(d.Y, d.X))
+		if edge.Chip then
+			edge.Chip.Position = UDim2.fromOffset(mid.X, mid.Y)
+		end
+	end
+
+	local function refreshEdges(node)
+		for _, edge in pairs(edges) do
+			if not node or edge.From == node.Id or edge.To == node.Id then
+				placeEdge(edge)
+			end
+		end
+	end
+
+	local function styleNode(node)
+		local sel = node == selected
+		tween(node.Stroke, Ease.Hover, {
+			Transparency = sel and theme:Get("FocusT") or theme:Get("StrokeT"),
+			Thickness = sel and 1.6 or 1,
+		})
+		theme:Set(node.Stroke, "Color", sel and "Accent" or "StrokeColor", Ease.Hover)
+		tween(node.Scale, Ease.Smooth, { Scale = sel and 1.03 or 1 })
+	end
+
+	local canvas = { Frame = viewport, Nodes = nodes, Edges = edges }
+
+	function canvas.Deselect()
+		if selected then
+			local old = selected
+			selected = nil
+			styleNode(old)
+		end
+		if opts.OnSelect then
+			fire(opts.OnSelect, nil)
+		end
+	end
+
+	local function select(node)
+		if selected == node then
+			return
+		end
+		local old = selected
+		selected = node
+		if old then
+			styleNode(old)
+		end
+		styleNode(node)
+		if opts.OnSelect then
+			fire(opts.OnSelect, node)
+		end
+	end
+	canvas.Select = select
+
+	local function makeNode(data)
+		local def = typeOf(data.Type)
+		local node = {
+			Id = data.Id,
+			Type = data.Type,
+			Title = data.Title or "Untitled",
+			Subtitle = data.Subtitle or "",
+			Fields = data.Fields or {},
+			Comments = data.Comments or {},
+			X = data.X or 0,
+			Y = data.Y or 0,
+		}
+		local frame = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			Position = UDim2.fromOffset(node.X, node.Y),
+			Size = UDim2.fromOffset(NODE_W, NODE_H),
+			BackgroundTransparency = 1,
+			Parent = nodesLayer,
+			corner(14),
+		})
+		theme:Bind(frame, { BackgroundColor3 = "Elevated" })
+		frame.BackgroundTransparency = 0
+		local scale = create("UIScale", { Parent = frame })
+		local stroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = frame })
+		theme:Bind(stroke, { Color = "StrokeColor", Transparency = "StrokeT" })
+		local shadow = newShadow(frame, { BlurRadius = UDim.new(0, 18), Offset = UDim2.fromOffset(0, 4), Transparency = 0.7, ShowBehindParent = true })
+		if shadow then
+			theme:Bind(shadow, { Color = "Shadow" })
+		end
+		local dot = create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromOffset(14, NODE_H / 2),
+			Size = UDim2.fromOffset(28, 28),
+			BackgroundColor3 = def.Color,
+			BackgroundTransparency = 0.82,
+			Parent = frame,
+			round(),
+		})
+		local mappedIcon = type(def.Icon) == "string" and Isle.Icons[def.Icon]
+		if mappedIcon == 0 or mappedIcon == "0" or mappedIcon == "rbxassetid://0" then
+			mappedIcon = nil
+		end
+		if def.Icon and (type(def.Icon) == "number" or mappedIcon) then
+			local id = mappedIcon or def.Icon
+			create("ImageLabel", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(16, 16),
+				BackgroundTransparency = 1,
+				Image = type(id) == "number" and ("rbxassetid://" .. id) or id,
+				ImageColor3 = def.Color,
+				Parent = dot,
+			})
+		else
+			create("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(8, 8),
+				BackgroundColor3 = def.Color,
+				Parent = dot,
+				round(),
+			})
+		end
+		local titleLabel = label(theme, {
+			Text = node.Title,
+			FontFace = Fonts.Medium,
+			TextSize = 14,
+			Position = UDim2.fromOffset(52, node.Subtitle ~= "" and 11 or 0),
+			Size = UDim2.new(1, -64, 0, node.Subtitle ~= "" and 18 or NODE_H),
+			Parent = frame,
+		})
+		local subLabel = label(theme, {
+			Text = node.Subtitle,
+			TextSize = 12,
+			Color = "SubText",
+			Position = UDim2.fromOffset(52, 30),
+			Size = UDim2.new(1, -64, 0, 16),
+			Visible = node.Subtitle ~= "",
+			Parent = frame,
+		})
+		node.Frame = frame
+		node.Scale = scale
+		node.Stroke = stroke
+		node.TitleLabel = titleLabel
+		node.SubLabel = subLabel
+		node.Dot = dot
+
+		frame.InputBegan:Connect(function(input)
+			if isPress(input) then
+				grabbed = { kind = "node", node = node, moved = 0 }
+				grabbed.last = window._pointer()
+			end
+		end)
+		frame.MouseEnter:Connect(function()
+			if node ~= selected then
+				tween(stroke, Ease.Hover, { Transparency = theme:Get("StrokeT") - 0.3 })
+			end
+		end)
+		frame.MouseLeave:Connect(function()
+			if node ~= selected then
+				tween(stroke, Ease.Hover, { Transparency = theme:Get("StrokeT") })
+			end
+		end)
+
+		nodes[node.Id] = node
+		return node
+	end
+
+	function canvas.AddNode(data)
+		data = data or {}
+		if not data.Id then
+			nodeSeq += 1
+			data.Id = "n" .. nodeSeq .. "_" .. math.floor(os.clock() * 1000) % 100000
+		end
+		if data.X == nil then
+			local vp = viewport.AbsoluteSize / scaleNow()
+			data.X = -pan.X + vp.X / 2 - NODE_W / 2
+			data.Y = -pan.Y + vp.Y / 2 - NODE_H / 2
+		end
+		local node = makeNode(data)
+		changed()
+		return node
+	end
+
+	function canvas.UpdateNode(node, data)
+		node.Title = data.Title or node.Title
+		node.Subtitle = data.Subtitle or node.Subtitle
+		node.TitleLabel.Text = node.Title
+		node.SubLabel.Text = node.Subtitle
+		node.SubLabel.Visible = node.Subtitle ~= ""
+		node.TitleLabel.Position = UDim2.fromOffset(52, node.Subtitle ~= "" and 11 or 0)
+		node.TitleLabel.Size = UDim2.new(1, -64, 0, node.Subtitle ~= "" and 18 or NODE_H)
+		changed()
+	end
+
+	function canvas.RemoveNode(node)
+		if selected == node then
+			canvas.Deselect()
+		end
+		for id, edge in pairs(edges) do
+			if edge.From == node.Id or edge.To == node.Id then
+				edge.Line:Destroy()
+				if edge.Chip then
+					edge.Chip:Destroy()
+				end
+				edges[id] = nil
+			end
+		end
+		node.Frame:Destroy()
+		nodes[node.Id] = nil
+		changed()
+	end
+
+	function canvas.AddEdge(fromId, toId, labelText, id)
+		if fromId == toId or not nodes[fromId] or not nodes[toId] then
+			return
+		end
+		for _, edge in pairs(edges) do
+			if (edge.From == fromId and edge.To == toId) or (edge.From == toId and edge.To == fromId) then
+				if labelText and labelText ~= "" then
+					edge.Label = labelText
+					edge.ChipLabel.Text = labelText
+					edge.Chip.Visible = true
+				end
+				changed()
+				return edge
+			end
+		end
+		if not id then
+			edgeSeq += 1
+			id = "e" .. edgeSeq
+		end
+		local line = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BorderSizePixel = 0,
+			Size = UDim2.fromOffset(1, 1.6),
+			Parent = edgesLayer,
+		})
+		theme:Bind(line, { BackgroundColor3 = "StrokeColor", BackgroundTransparency = "LineT" })
+		local chip = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.new(0, 0, 0, 20),
+			AutomaticSize = Enum.AutomaticSize.X,
+			Visible = labelText ~= nil and labelText ~= "",
+			Parent = edgesLayer,
+			corner(6),
+			pad(0, 8, 0, 8),
+		})
+		theme:Bind(chip, { BackgroundColor3 = "Elevated" })
+		local chipStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = chip })
+		theme:Bind(chipStroke, { Color = "StrokeColor", Transparency = "StrokeT" })
+		local chipLabel = label(theme, {
+			Text = labelText or "",
+			FontFace = Fonts.Medium,
+			TextSize = 11,
+			Color = "SubText",
+			AutomaticSize = Enum.AutomaticSize.X,
+			TextTruncate = Enum.TextTruncate.None,
+			Size = UDim2.new(0, 0, 1, 0),
+			Parent = chip,
+		})
+		local edge = { Id = id, From = fromId, To = toId, Label = labelText, Line = line, Chip = chip, ChipLabel = chipLabel }
+		edges[id] = edge
+		placeEdge(edge)
+		changed()
+		return edge
+	end
+
+	function canvas.RemoveEdge(edge)
+		edge.Line:Destroy()
+		if edge.Chip then
+			edge.Chip:Destroy()
+		end
+		edges[edge.Id] = nil
+		changed()
+	end
+
+	function canvas.Connections(node)
+		local out = {}
+		for _, edge in pairs(edges) do
+			if edge.From == node.Id then
+				table.insert(out, { Edge = edge, Other = nodes[edge.To] })
+			elseif edge.To == node.Id then
+				table.insert(out, { Edge = edge, Other = nodes[edge.From] })
+			end
+		end
+		return out
+	end
+
+	function canvas.Clear()
+		canvas.Deselect()
+		for _, edge in pairs(edges) do
+			edge.Line:Destroy()
+			if edge.Chip then
+				edge.Chip:Destroy()
+			end
+		end
+		for _, node in pairs(nodes) do
+			node.Frame:Destroy()
+		end
+		table.clear(nodes)
+		table.clear(edges)
+		pan = Vector2.zero
+		nodeSeq, edgeSeq = 0, 0
+		applyPan()
+	end
+
+	function canvas.IsEmpty()
+		return next(nodes) == nil
+	end
+
+	function canvas.Count()
+		local n, e = 0, 0
+		for _ in pairs(nodes) do
+			n += 1
+		end
+		for _ in pairs(edges) do
+			e += 1
+		end
+		return n, e
+	end
+
+	function canvas.Serialize()
+		local data = { pan = { pan.X, pan.Y }, nodes = {}, edges = {} }
+		for _, node in pairs(nodes) do
+			table.insert(data.nodes, {
+				Id = node.Id,
+				Type = node.Type,
+				Title = node.Title,
+				Subtitle = node.Subtitle,
+				Fields = node.Fields,
+				Comments = node.Comments,
+				X = math.floor(node.X),
+				Y = math.floor(node.Y),
+			})
+		end
+		for _, edge in pairs(edges) do
+			table.insert(data.edges, { Id = edge.Id, From = edge.From, To = edge.To, Label = edge.Label })
+		end
+		return data
+	end
+
+	function canvas.Load(data)
+		canvas.Clear()
+		data = data or {}
+		if data.pan then
+			pan = Vector2.new(data.pan[1] or 0, data.pan[2] or 0)
+		end
+		local maxN, maxE = 0, 0
+		for _, node in ipairs(data.nodes or {}) do
+			makeNode(node)
+			local num = tonumber(tostring(node.Id):match("^n(%d+)"))
+			if num then
+				maxN = math.max(maxN, num)
+			end
+		end
+		for _, edge in ipairs(data.edges or {}) do
+			canvas.AddEdge(edge.From, edge.To, edge.Label, edge.Id)
+			local num = tonumber(tostring(edge.Id):match("^e(%d+)"))
+			if num then
+				maxE = math.max(maxE, num)
+			end
+		end
+		nodeSeq = math.max(nodeSeq, maxN)
+		edgeSeq = math.max(edgeSeq, maxE)
+		applyPan()
+		refreshEdges()
+	end
+
+	bg.InputBegan:Connect(function(input)
+		if isPress(input) then
+			grabbed = { kind = "bg", moved = 0, last = window._pointer() }
+		end
+	end)
+
+	window:_connect(UserInputService.InputChanged, function(input)
+		if not grabbed or not isMove(input) then
+			return
+		end
+		local p = window._pointer()
+		local delta = (p - grabbed.last) / scaleNow()
+		grabbed.last = p
+		grabbed.moved += delta.Magnitude
+		if grabbed.kind == "bg" then
+			pan += delta
+			applyPan()
+		elseif grabbed.kind == "node" then
+			local node = grabbed.node
+			node.X += delta.X
+			node.Y += delta.Y
+			node.Frame.Position = UDim2.fromOffset(node.X, node.Y)
+			refreshEdges(node)
+		end
+	end)
+
+	window:_connect(UserInputService.InputEnded, function(input)
+		if not grabbed or not isPress(input) then
+			return
+		end
+		local g = grabbed
+		grabbed = nil
+		if g.kind == "node" then
+			if g.moved < 5 then
+				if linkCb then
+					local cb = linkCb
+					linkCb = nil
+					if canvas._linkHint then
+						canvas._linkHint()
+					end
+					cb(g.node)
+				else
+					select(g.node)
+				end
+			else
+				changed()
+			end
+		elseif g.kind == "bg" and g.moved < 5 then
+			if linkCb then
+				linkCb = nil
+				if canvas._linkHint then
+					canvas._linkHint()
+				end
+			else
+				canvas.Deselect()
+			end
+		elseif g.kind == "bg" then
+			changed()
+		end
+	end)
+
+	local hint = create("Frame", {
+		Name = "LinkHint",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 14),
+		Size = UDim2.new(0, 0, 0, 30),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 40,
+		Parent = viewport,
+		round(),
+		pad(0, 14, 0, 14),
+	})
+	theme:Bind(hint, { BackgroundColor3 = "Accent" })
+	local hintLabel = label(theme, {
+		Text = "Tap a node to link",
+		FontFace = Fonts.Medium,
+		TextSize = 13,
+		Color = "AccentText",
+		TextXAlignment = Enum.TextXAlignment.Center,
+		AutomaticSize = Enum.AutomaticSize.X,
+		TextTruncate = Enum.TextTruncate.None,
+		Size = UDim2.new(0, 0, 1, 0),
+		ZIndex = 41,
+		Parent = hint,
+	})
+	function canvas._linkHint()
+		hint.Visible = linkCb ~= nil
+	end
+
+	function canvas.BeginLink(cb, text)
+		linkCb = cb
+		hintLabel.Text = text or "Tap a node to link"
+		hint.Visible = true
+	end
+
+	function canvas.Linking()
+		return linkCb ~= nil
+	end
+
+	if opts.Actions and #opts.Actions > 0 then
+		local tools = create("Frame", {
+			Name = "Toolbar",
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 1, -16),
+			Size = UDim2.fromOffset(0, 44),
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundTransparency = 1,
+			ZIndex = 30,
+			Parent = viewport,
+			round(),
+			pad(5),
+			list({ FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 2) }),
+		})
+		theme:Bind(tools, { BackgroundColor3 = "Elevated" })
+		local toolsStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = tools })
+		theme:Bind(toolsStroke, { Color = "StrokeColor", Transparency = "StrokeT" })
+		local toolsShadow = newShadow(tools, { BlurRadius = UDim.new(0, 24), Offset = UDim2.fromOffset(0, 8), Transparency = 1, ShowBehindParent = false })
+		if toolsShadow then
+			theme:Bind(toolsShadow, { Color = "Shadow" })
+			toolsShadow.Transparency = theme:Get("ShadowT")
+		end
+		for i, action in ipairs(opts.Actions) do
+			local btn = create("TextButton", {
+				Text = "",
+				AutoButtonColor = false,
+				Size = UDim2.new(0, 0, 1, 0),
+				AutomaticSize = Enum.AutomaticSize.X,
+				LayoutOrder = i,
+				ZIndex = 31,
+				Parent = tools,
+				corner(10),
+				pad(0, 14, 0, 14),
+			})
+			theme:Bind(btn, { BackgroundColor3 = "HoverColor" })
+			local lbl = label(theme, {
+				Text = action.Label or "",
+				FontFace = Fonts.Medium,
+				TextSize = 14,
+				Color = action.Primary and "Accent" or "Text",
+				TextXAlignment = Enum.TextXAlignment.Center,
+				AutomaticSize = Enum.AutomaticSize.X,
+				TextTruncate = Enum.TextTruncate.None,
+				Size = UDim2.new(0, 0, 1, 0),
+				ZIndex = 32,
+				Parent = btn,
+			})
+			btn.MouseEnter:Connect(function()
+				tween(btn, Ease.Hover, { BackgroundTransparency = theme:Get("HoverT") - 0.02 })
+			end)
+			btn.MouseLeave:Connect(function()
+				tween(btn, Ease.Hover, { BackgroundTransparency = 1 })
+			end)
+			btn.MouseButton1Click:Connect(function()
+				fire(action.Callback)
+			end)
+			action._label = lbl
+		end
+	end
+
+	return canvas
 end
 
 return Isle
