@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.3.0" }
+local Isle = { Version = "4.4.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -157,6 +157,7 @@ end
 local NAV_H = 40
 local NAV_GAP = 12
 local HEADER = 58
+local HERO_TOP = 7
 local HANDLE_GAP = 12
 local HANDLE_H = 5
 local RADIUS = 24
@@ -1701,7 +1702,8 @@ function Isle.new(options)
 	end)
 
 	function window:_updateBack()
-		local show = #self._history > 0
+		local page = self.ActivePage
+		local show = #self._history > 0 and page ~= nil and not page.NavItem.Visible
 		if show == self._backShown then
 			return
 		end
@@ -1782,8 +1784,7 @@ function Isle.new(options)
 
 	local pages = create("Frame", {
 		Name = "Pages",
-		Position = UDim2.fromOffset(0, HEADER),
-		Size = UDim2.new(1, 0, 1, -HEADER),
+		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
 		ZIndex = 4,
@@ -2096,7 +2097,7 @@ function Isle.new(options)
 		if active and active.FullHeight then
 			wanted = limit
 		elseif active then
-			wanted = HEADER + active.Content.AbsoluteSize.Y / s
+			wanted = (active._hero and HERO_TOP or HEADER) + active.Content.AbsoluteSize.Y / s
 		end
 		if window._modals > 0 then
 			wanted = math.max(wanted, 320)
@@ -2149,8 +2150,18 @@ function Isle.new(options)
 				page.Canvas.Visible = a > 0.003
 				local slide = 36 * (1 - smooth(a))
 				local dir = page._dir or 1
-				local off = goal == 1 and slide * dir or -slide * dir
-				page.Canvas.Position = UDim2.fromOffset(off, 0)
+				page._off = goal == 1 and slide * dir or -slide * dir
+			end
+			-- hero pages start under the header buttons and collapse into the header while scrolling
+			local top = HEADER
+			if page._hero then
+				top = HERO_TOP + math.clamp(page.Scroll.CanvasPosition.Y, 0, HEADER - HERO_TOP)
+			end
+			local off = page._off or 0
+			if page._top ~= top or page._placed ~= off then
+				page._top, page._placed = top, off
+				page.Canvas.Position = UDim2.fromOffset(off, top)
+				page.Canvas.Size = UDim2.new(1, 0, 1, -top)
 			end
 			local groupT = 1 - smooth(page._alpha) * window._vis
 			if math.abs(page.Canvas.GroupTransparency - groupT) > 0.0005 then
@@ -3171,20 +3182,20 @@ function Page:Heading(title, subtitle, opts)
 	if hero then
 		titleParent = create("Frame", {
 			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 32),
+			Size = UDim2.new(1, -80, 0, 32),
 			LayoutOrder = 1,
 			Parent = frame,
 			list({
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, 10),
+				Padding = UDim.new(0, 11),
 			}),
 		})
 		create("ImageLabel", {
 			Image = logo.Image,
 			BackgroundTransparency = 1,
 			ScaleType = Enum.ScaleType.Fit,
-			Size = UDim2.fromOffset(28, 28),
+			Size = UDim2.fromOffset(32, 32),
 			LayoutOrder = 1,
 			Parent = titleParent,
 		})
@@ -5234,26 +5245,22 @@ function Page:Board(opts)
 	local pathWires = {}
 	local wireProgress = 0
 	local jitter = 0
-	local pathFade
 
+	-- fades with transparency and with a colour blend from the card, whichever the engine honours
 	local function fadePath(wire)
 		local path = wire.Path
 		if not path then
 			return
 		end
-		if pathFade == nil then
-			pathFade = pcall(function()
-				path.Transparency = 0.5
-				assert(math.abs(path.Transparency - 0.5) < 0.01)
-			end)
-		end
-		if pathFade then
+		pcall(function()
 			path.Transparency = 1 - wireAlpha
-		elseif wireAlpha < 1 then
-			-- no transparency support: blend the stroke into the card colour instead
+		end)
+		if wireAlpha < 1 then
+			wire.Blended = true
 			theme:Unbind(path, "Color3")
 			path.Color3 = theme:Get("Background"):Lerp(theme:Get(wire.Key), wireAlpha)
-		else
+		elseif wire.Blended then
+			wire.Blended = false
 			theme:Set(path, "Color3", wire.Key)
 		end
 		path.Visible = wireAlpha > 0.01 and not wire.Hidden
@@ -6565,7 +6572,7 @@ function Page:Board(opts)
 			syncPaths()
 		end
 		local settled = window.ActivePage == page and page._alpha > 0.96 and window._vis > 0.96
-		local nextProgress = settled and math.min(1, wireProgress + dt / 0.5) or 0
+		local nextProgress = settled and math.min(1, wireProgress + dt / 0.3) or 0
 		if nextProgress ~= wireProgress then
 			wireProgress = nextProgress
 			wireAlpha = smooth(wireProgress)
