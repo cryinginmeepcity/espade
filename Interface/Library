@@ -10,6 +10,7 @@ Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
 Isle.IconUrl = ""
+Isle.SmoothPaths = false
 local GRAIN_STRENGTH = 0.5
 
 local FONT = "rbxasset://fonts/families/BuilderSans.json"
@@ -5177,30 +5178,95 @@ function Page:Board(opts)
 		seg.Visible = true
 	end
 
+	local pathsBroken = false
+
+	local function drawPath(wire, p0, p1, p2, p3)
+		if not Isle.SmoothPaths or pathsBroken then
+			return false
+		end
+		local ok = pcall(function()
+			local path = wire.Path
+			if not path then
+				path = Instance.new("Path2D")
+				path.Thickness = WIRE
+				path.Parent = wire.Parent
+				theme:Bind(path, { Color3 = wire.Key })
+				wire.Path = path
+			end
+			local a, b = p1 - p0, p2 - p3
+			path:SetControlPoints({
+				Path2DControlPoint.new(UDim2.fromOffset(p0.X, p0.Y), UDim2.new(), UDim2.fromOffset(a.X, a.Y)),
+				Path2DControlPoint.new(UDim2.fromOffset(p3.X, p3.Y), UDim2.fromOffset(b.X, b.Y), UDim2.new()),
+			})
+			path.Visible = true
+		end)
+		if not ok then
+			pathsBroken = true
+			if wire.Path then
+				pcall(function()
+					wire.Path:Destroy()
+				end)
+				wire.Path = nil
+			end
+		end
+		return ok
+	end
+
+	local SAMPLES = 48
+	local FLATNESS = 0.35
+	local samples = table.create(SAMPLES + 1)
+
 	local function drawCurve(wire, p0, n0, p3, n3)
 		local dist = (p3 - p0).Magnitude
 		local reach = math.clamp(dist * 0.4, 10, 150)
 		local p1 = p0 + n0 * reach
 		local p2 = p3 + n3 * reach
-		local count = math.clamp(math.ceil(dist / 6), 12, 64)
-		local segs = wire.Segments
-		for i = #segs + 1, count do
-			segs[i] = newSegment(wire.Parent, wire.Key)
-		end
-		local prev = p0
-		local middle = p0
-		local half = math.floor(count / 2)
-		for i = 1, count do
-			local t = i / count
+		for i = 0, SAMPLES do
+			local t = i / SAMPLES
 			local mt = 1 - t
-			local p = p0 * (mt * mt * mt) + p1 * (3 * mt * mt * t) + p2 * (3 * mt * t * t) + p3 * (t * t * t)
-			placeSegment(segs[i], prev, p)
-			if i == half then
-				middle = p
-			end
-			prev = p
+			samples[i + 1] = p0 * (mt * mt * mt) + p1 * (3 * mt * mt * t) + p2 * (3 * mt * t * t) + p3 * (t * t * t)
 		end
-		for i = count + 1, #segs do
+		local middle = samples[SAMPLES / 2 + 1]
+		local segs = wire.Segments
+		if drawPath(wire, p0, p1, p2, p3) then
+			for _, seg in ipairs(segs) do
+				seg.Visible = false
+			end
+			return middle
+		end
+		-- merge samples into the longest runs that stay within FLATNESS of the curve
+		local used = 0
+		local from = 1
+		while from <= SAMPLES do
+			local a = samples[from]
+			local to = from + 1
+			while to <= SAMPLES do
+				local b = samples[to + 1]
+				local chord = b - a
+				local length = chord.Magnitude
+				local flat = true
+				if length > 0.001 then
+					for k = from + 1, to do
+						local v = samples[k] - a
+						if math.abs(v.X * chord.Y - v.Y * chord.X) / length > FLATNESS then
+							flat = false
+							break
+						end
+					end
+				end
+				if not flat then
+					break
+				end
+				to += 1
+			end
+			used += 1
+			if not segs[used] then
+				segs[used] = newSegment(wire.Parent, wire.Key)
+			end
+			placeSegment(segs[used], a, samples[to])
+			from = to
+		end
+		for i = used + 1, #segs do
 			segs[i].Visible = false
 		end
 		return middle
@@ -5257,6 +5323,9 @@ function Page:Board(opts)
 	local function styleEdge(edge)
 		local on = edge == selectedEdge
 		edge.Key = on and "Accent" or "Wire"
+		if edge.Path then
+			theme:Set(edge.Path, "Color3", edge.Key, Ease.Hover)
+		end
 		for _, seg in ipairs(edge.Segments) do
 			theme:Set(seg, "BackgroundColor3", edge.Key, Ease.Hover)
 		end
@@ -5381,6 +5450,9 @@ function Page:Board(opts)
 		if not show then
 			for _, seg in ipairs(tempWire.Segments) do
 				seg.Visible = false
+			end
+			if tempWire.Path then
+				tempWire.Path.Visible = false
 			end
 		end
 	end
@@ -5619,6 +5691,9 @@ function Page:Board(opts)
 			seg:Destroy()
 		end
 		edge.Chip:Destroy()
+		if edge.Path then
+			edge.Path:Destroy()
+		end
 		edge.ArrowA:Destroy()
 		edge.ArrowB:Destroy()
 		edges[edge.Id] = nil
