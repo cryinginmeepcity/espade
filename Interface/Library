@@ -5106,7 +5106,8 @@ function Page:Board(opts)
 		ZIndex = 1,
 		Parent = viewport,
 	})
-	local panFrame = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 0), ZIndex = 2, Parent = viewport })
+	local pathLayer = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 0), ZIndex = 2, Parent = viewport })
+	local panFrame = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 0), ZIndex = 3, Parent = viewport })
 	local world = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 0), Parent = panFrame })
 	local worldScale = create("UIScale", { Parent = world })
 	local edgesLayer = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 0), ZIndex = 1, Parent = world })
@@ -5127,9 +5128,13 @@ function Page:Board(opts)
 
 	local canvas = { Frame = viewport, Nodes = nodes, Edges = edges }
 
+	local syncView
 	local function applyView()
 		panFrame.Position = UDim2.fromOffset(pan.X, pan.Y)
 		worldScale.Scale = zoom
+		if syncView then
+			syncView()
+		end
 		if zoomLabel then
 			zoomLabel.Text = tostring(math.floor(targetZoom * 100 + 0.5)) .. "%"
 		end
@@ -5179,38 +5184,67 @@ function Page:Board(opts)
 	end
 
 	local pathsBroken = false
+	local pathWires = {}
+
+	-- Path2D ignores UIScale, so its points are converted to screen pixels by hand
+	local function setPath(wire)
+		local bez = wire.Bez
+		local path = wire.Path
+		if not bez or not path then
+			return
+		end
+		local k = scaleNow()
+		local function px(p)
+			return (p * zoom + pan) * k
+		end
+		local p0, p1, p2, p3 = px(bez[1]), px(bez[2]), px(bez[3]), px(bez[4])
+		local a, b = p1 - p0, p2 - p3
+		path.Thickness = WIRE * zoom * k
+		path:SetControlPoints({
+			Path2DControlPoint.new(UDim2.fromOffset(p0.X, p0.Y), UDim2.new(), UDim2.fromOffset(a.X, a.Y)),
+			Path2DControlPoint.new(UDim2.fromOffset(p3.X, p3.Y), UDim2.fromOffset(b.X, b.Y), UDim2.new()),
+		})
+	end
 
 	local function drawPath(wire, p0, p1, p2, p3)
 		if not Isle.SmoothPaths or pathsBroken then
 			return false
 		end
 		local ok = pcall(function()
-			local path = wire.Path
-			if not path then
-				path = Instance.new("Path2D")
-				path.Thickness = WIRE
-				path.Parent = wire.Parent
+			if not wire.Path then
+				local path = Instance.new("Path2D")
+				path.Parent = pathLayer
 				theme:Bind(path, { Color3 = wire.Key })
 				wire.Path = path
+				pathWires[wire] = true
 			end
-			local a, b = p1 - p0, p2 - p3
-			path:SetControlPoints({
-				Path2DControlPoint.new(UDim2.fromOffset(p0.X, p0.Y), UDim2.new(), UDim2.fromOffset(a.X, a.Y)),
-				Path2DControlPoint.new(UDim2.fromOffset(p3.X, p3.Y), UDim2.fromOffset(b.X, b.Y), UDim2.new()),
-			})
-			path.Visible = true
+			wire.Bez = { p0, p1, p2, p3 }
+			setPath(wire)
+			wire.Path.Visible = true
 		end)
 		if not ok then
 			pathsBroken = true
-			if wire.Path then
+			for other in pairs(pathWires) do
 				pcall(function()
-					wire.Path:Destroy()
+					other.Path:Destroy()
 				end)
-				wire.Path = nil
+				other.Path = nil
 			end
+			table.clear(pathWires)
 		end
 		return ok
 	end
+
+	local function syncPaths()
+		if pathsBroken then
+			return
+		end
+		for wire in pairs(pathWires) do
+			pcall(setPath, wire)
+		end
+	end
+
+	syncView = syncPaths
 
 	local SAMPLES = 48
 	local FLATNESS = 0.35
@@ -5693,7 +5727,9 @@ function Page:Board(opts)
 		edge.Chip:Destroy()
 		if edge.Path then
 			edge.Path:Destroy()
+			edge.Path = nil
 		end
+		pathWires[edge] = nil
 		edge.ArrowA:Destroy()
 		edge.ArrowB:Destroy()
 		edges[edge.Id] = nil
@@ -6390,7 +6426,13 @@ function Page:Board(opts)
 		end
 	end)
 
+	local lastScale = scaleNow()
 	table.insert(window._steppers, function(dt)
+		local nowScale = scaleNow()
+		if nowScale ~= lastScale then
+			lastScale = nowScale
+			syncPaths()
+		end
 		local goal = panelOpen and 0 or (PANEL_W + 30)
 		if math.abs(panelOffset - goal) > 0.3 then
 			panelOffset += (goal - panelOffset) * damp(panelOpen and 13 or 18, dt)
