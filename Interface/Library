@@ -82,8 +82,7 @@ local Themes = {
 		Warning = Color3.fromRGB(255, 194, 102),
 		DimColor = BLACK,
 		DimT = 0.45,
-		WireColor = WHITE,
-		WireT = 0.72,
+		Wire = Color3.fromRGB(78, 78, 88),
 		Tint = 0.4,
 		Opaque = 0,
 		Clear = 1,
@@ -135,8 +134,7 @@ local Themes = {
 		Warning = Color3.fromRGB(196, 128, 16),
 		DimColor = Color3.fromRGB(30, 30, 40),
 		DimT = 0.6,
-		WireColor = BLACK,
-		WireT = 0.7,
+		Wire = Color3.fromRGB(178, 178, 190),
 		Tint = 0.6,
 		Opaque = 0,
 		Clear = 1,
@@ -5076,7 +5074,7 @@ function Page:Board(opts)
 	local theme = window.Theme
 	local types = opts.Types or {}
 	local NODE_W, NODE_H = 208, 60
-	local SEGMENTS = 22
+	local WIRE = 2
 	local PANEL_W = 320
 	local ZOOM_MIN, ZOOM_MAX = 0.4, 2
 
@@ -5157,44 +5155,81 @@ function Page:Board(opts)
 		applyView()
 	end
 
-	local function makeSegments(parent, colorKey, transKey)
-		local segs = {}
-		for _ = 1, SEGMENTS do
-			local seg = create("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				BorderSizePixel = 0,
-				Size = UDim2.fromOffset(1, 1.5),
-				Parent = parent,
-			})
-			theme:Bind(seg, { BackgroundColor3 = colorKey, BackgroundTransparency = transKey })
-			table.insert(segs, seg)
-		end
-		return segs
+	local function newSegment(parent, colorKey)
+		local seg = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BorderSizePixel = 0,
+			Size = UDim2.fromOffset(WIRE, WIRE),
+			Visible = false,
+			Parent = parent,
+			round(),
+		})
+		theme:Bind(seg, { BackgroundColor3 = colorKey })
+		return seg
 	end
 
-	local function drawCurve(segs, p0, p3, sideA, sideB)
-		local reach = math.clamp(math.abs(p3.X - p0.X) * 0.5, 36, 170)
-		local p1 = p0 + Vector2.new(sideA * reach, 0)
-		local p2 = p3 + Vector2.new(sideB * reach, 0)
+	local function placeSegment(seg, a, b)
+		local d = b - a
+		local mid = (a + b) / 2
+		seg.Size = UDim2.fromOffset(d.Magnitude + WIRE, WIRE)
+		seg.Position = UDim2.fromOffset(mid.X, mid.Y)
+		seg.Rotation = math.deg(math.atan2(d.Y, d.X))
+		seg.Visible = true
+	end
+
+	local function drawCurve(wire, p0, n0, p3, n3)
+		local dist = (p3 - p0).Magnitude
+		local reach = math.clamp(dist * 0.4, 10, 150)
+		local p1 = p0 + n0 * reach
+		local p2 = p3 + n3 * reach
+		local count = math.clamp(math.ceil(dist / 6), 12, 64)
+		local segs = wire.Segments
+		for i = #segs + 1, count do
+			segs[i] = newSegment(wire.Parent, wire.Key)
+		end
 		local prev = p0
-		local count = #segs
 		local middle = p0
+		local half = math.floor(count / 2)
 		for i = 1, count do
 			local t = i / count
 			local mt = 1 - t
 			local p = p0 * (mt * mt * mt) + p1 * (3 * mt * mt * t) + p2 * (3 * mt * t * t) + p3 * (t * t * t)
-			local d = p - prev
-			local mid = (prev + p) / 2
-			local seg = segs[i]
-			seg.Size = UDim2.fromOffset(d.Magnitude + 0.8, 1.5)
-			seg.Position = UDim2.fromOffset(mid.X, mid.Y)
-			seg.Rotation = math.deg(math.atan2(d.Y, d.X))
-			if i == math.floor(count / 2) then
+			placeSegment(segs[i], prev, p)
+			if i == half then
 				middle = p
 			end
 			prev = p
 		end
+		for i = count + 1, #segs do
+			segs[i].Visible = false
+		end
 		return middle
+	end
+
+	local function nodeCenter(node)
+		return Vector2.new(node.X + NODE_W / 2, node.Y + NODE_H / 2)
+	end
+
+	-- border point facing the target and a normal that turns smoothly around the corners
+	local function anchor(node, target)
+		local center = nodeCenter(node)
+		local d = target - center
+		if d.Magnitude < 1 then
+			d = Vector2.new(1, 0)
+		end
+		local hw, hh = NODE_W / 2, NODE_H / 2
+		local qx, qy = d.X / hw, d.Y / hh
+		local m = math.max(math.abs(qx), math.abs(qy))
+		qx, qy = qx / m, qy / m
+		local point = center + Vector2.new(qx * hw, qy * hh)
+		local normal = Vector2.new(qx * qx * qx, qy * qy * qy)
+		return point, normal.Unit
+	end
+
+	local function rotated(v, degrees)
+		local r = math.rad(degrees)
+		local c, s = math.cos(r), math.sin(r)
+		return Vector2.new(v.X * c - v.Y * s, v.X * s + v.Y * c)
 	end
 
 	local function placeEdge(edge)
@@ -5202,17 +5237,13 @@ function Page:Board(opts)
 		if not a or not b then
 			return
 		end
-		local forward = (b.X + NODE_W / 2) >= (a.X + NODE_W / 2)
-		local side = forward and 1 or -1
-		local p0 = Vector2.new(a.X + (forward and NODE_W or 0), a.Y + NODE_H / 2)
-		local p3 = Vector2.new(b.X + (forward and 0 or NODE_W), b.Y + NODE_H / 2)
-		local tip = p3 - Vector2.new(side * 3, 0)
-		local middle = drawCurve(edge.Segments, p0, tip, side, -side)
+		local pa, na = anchor(a, nodeCenter(b))
+		local pb, nb = anchor(b, nodeCenter(a))
+		local tip = pb + nb * 4
+		local middle = drawCurve(edge, pa, na, tip, nb)
 		edge.Chip.Position = UDim2.fromOffset(middle.X, middle.Y)
-		edge.ArrowA.Position = UDim2.fromOffset(tip.X - side * 2.6, tip.Y - 2.5)
-		edge.ArrowA.Rotation = 45 * side
-		edge.ArrowB.Position = UDim2.fromOffset(tip.X - side * 2.6, tip.Y + 2.5)
-		edge.ArrowB.Rotation = -45 * side
+		placeSegment(edge.ArrowA, tip, tip + rotated(nb, 27) * 9)
+		placeSegment(edge.ArrowB, tip, tip + rotated(nb, -27) * 9)
 	end
 
 	local function refreshEdges(node)
@@ -5225,14 +5256,12 @@ function Page:Board(opts)
 
 	local function styleEdge(edge)
 		local on = edge == selectedEdge
-		local colorKey, transKey = on and "Accent" or "WireColor", on and "Opaque" or "WireT"
+		edge.Key = on and "Accent" or "Wire"
 		for _, seg in ipairs(edge.Segments) do
-			theme:Set(seg, "BackgroundColor3", colorKey, Ease.Hover)
-			theme:Set(seg, "BackgroundTransparency", transKey, Ease.Hover)
+			theme:Set(seg, "BackgroundColor3", edge.Key, Ease.Hover)
 		end
-		for _, part in ipairs({ edge.ArrowA, edge.ArrowB }) do
-			theme:Set(part, "BackgroundColor3", on and "Accent" or "SubText", Ease.Hover)
-		end
+		theme:Set(edge.ArrowA, "BackgroundColor3", edge.Key, Ease.Hover)
+		theme:Set(edge.ArrowB, "BackgroundColor3", edge.Key, Ease.Hover)
 		theme:Set(edge.ChipStroke, "Color", on and "Accent" or "StrokeColor", Ease.Hover)
 		theme:Set(edge.ChipStroke, "Transparency", on and "FocusT" or "StrokeT", Ease.Hover)
 		theme:Set(edge.ChipLabel, "TextColor3", on and "Text" or "SubText", Ease.Hover)
@@ -5347,13 +5376,12 @@ function Page:Board(opts)
 		return nil
 	end
 
-	local tempSegs = makeSegments(linkLayer, "Accent", "Opaque")
-	for _, seg in ipairs(tempSegs) do
-		seg.Visible = false
-	end
+	local tempWire = { Segments = {}, Parent = linkLayer, Key = "Accent" }
 	local function showTemp(show)
-		for _, seg in ipairs(tempSegs) do
-			seg.Visible = show
+		if not show then
+			for _, seg in ipairs(tempWire.Segments) do
+				seg.Visible = false
+			end
 		end
 	end
 
@@ -5635,18 +5663,6 @@ function Page:Board(opts)
 			edgeSeq += 1
 			id = "e" .. edgeSeq
 		end
-		local segs = makeSegments(edgesLayer, "WireColor", "WireT")
-		local function arrowPart()
-			local part = create("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Size = UDim2.fromOffset(8, 1.5),
-				BorderSizePixel = 0,
-				Parent = edgesLayer,
-				round(),
-			})
-			theme:Bind(part, { BackgroundColor3 = "SubText" })
-			return part
-		end
 		local chip = create("TextButton", {
 			Text = "",
 			AutoButtonColor = false,
@@ -5683,13 +5699,15 @@ function Page:Board(opts)
 			From = fromId,
 			To = toId,
 			Label = labelText,
-			Segments = segs,
+			Segments = {},
+			Parent = edgesLayer,
+			Key = "Wire",
 			Chip = chip,
 			ChipStroke = chipStroke,
 			ChipLabel = chipLabel,
 			ChipDot = chipDot,
-			ArrowA = arrowPart(),
-			ArrowB = arrowPart(),
+			ArrowA = newSegment(edgesLayer, "Wire"),
+			ArrowB = newSegment(edgesLayer, "Wire"),
 		}
 		pressable(chip, 0.92)
 		chip.MouseButton1Click:Connect(function()
@@ -5907,8 +5925,15 @@ function Page:Board(opts)
 			local side = grabbed.side
 			local start = Vector2.new(from.X + (side == 1 and NODE_W or 0), from.Y + NODE_H / 2)
 			local point = worldPoint()
-			drawCurve(tempSegs, start, point, side, -side)
 			local target = nodeAt(point, from)
+			if target then
+				local border, normal = anchor(target, start)
+				drawCurve(tempWire, start, Vector2.new(side, 0), border + normal * 4, normal)
+			else
+				local back = start - point
+				local normal = back.Magnitude > 1 and back.Unit or Vector2.new(-side, 0)
+				drawCurve(tempWire, start, Vector2.new(side, 0), point, normal * 0.4)
+			end
 			if target ~= linkTarget then
 				local old = linkTarget
 				linkTarget = target
