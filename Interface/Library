@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.0.0" }
+local Isle = { Version = "4.2.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -1534,7 +1534,7 @@ function Isle.new(options)
 		ZIndex = 5,
 		Parent = card,
 	})
-	local brand = create("Frame", {
+	local brand = create("CanvasGroup", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(PAGE_PAD, 0),
 		Size = UDim2.new(1, -130, 1, 0),
@@ -1774,8 +1774,6 @@ function Isle.new(options)
 		if animated then
 			tween(ringClip, Ease.Slow, { Position = clipPos })
 			tween(ringHalf, Ease.Slow, { Position = halfPos })
-			ring.Rotation = 0
-			tween(ring, Ease.Slow, { Rotation = 180 })
 		else
 			ringClip.Position = clipPos
 			ringHalf.Position = halfPos
@@ -2064,6 +2062,7 @@ function Isle.new(options)
 	end)
 
 	local indicatorPos, indicatorSize
+	local brandAlpha = 1
 	local indicatorVel, indicatorSizeVel = Vector2.zero, Vector2.zero
 
 	window:_connect(RunService.RenderStepped, function(dt)
@@ -2157,6 +2156,20 @@ function Isle.new(options)
 			if math.abs(page.Canvas.GroupTransparency - groupT) > 0.0005 then
 				page.Canvas.GroupTransparency = groupT
 			end
+		end
+
+		local hero = active and active._hero
+		local heroShown = false
+		if hero and hero.Parent then
+			heroShown = hero.AbsolutePosition.Y + hero.AbsoluteSize.Y * 0.55 > active.Scroll.AbsolutePosition.Y
+		end
+		local brandGoal = heroShown and 0 or 1
+		if brandAlpha ~= brandGoal then
+			brandAlpha += (brandGoal - brandAlpha) * damp(12, dt)
+			if math.abs(brandAlpha - brandGoal) < 0.01 then
+				brandAlpha = brandGoal
+			end
+			brand.GroupTransparency = 1 - brandAlpha
 		end
 
 		navIndicator.Visible = active ~= nil and active.NavItem.Visible
@@ -3152,13 +3165,40 @@ function Page:Heading(title, subtitle, opts)
 			icon:SetColor(opts.IconColor)
 		end
 	end
+	local titleParent = frame
+	local logo = self.Window.LogoImage
+	local hero = opts.Hero and logo and logo.Image ~= ""
+	if hero then
+		titleParent = create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 32),
+			LayoutOrder = 1,
+			Parent = frame,
+			list({
+				FillDirection = Enum.FillDirection.Horizontal,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 10),
+			}),
+		})
+		create("ImageLabel", {
+			Image = logo.Image,
+			BackgroundTransparency = 1,
+			ScaleType = Enum.ScaleType.Fit,
+			Size = UDim2.fromOffset(28, 28),
+			LayoutOrder = 1,
+			Parent = titleParent,
+		})
+		self._hero = titleParent
+	end
 	local titleLabel = label(theme, {
 		Text = title or "",
 		FontFace = Fonts.SemiBold,
 		TextSize = compact and 20 or 28,
-		Size = UDim2.new(1, 0, 0, compact and 24 or 32),
-		LayoutOrder = 1,
-		Parent = frame,
+		Size = hero and UDim2.new(0, 0, 1, 0) or UDim2.new(1, 0, 0, compact and 24 or 32),
+		AutomaticSize = hero and Enum.AutomaticSize.X or Enum.AutomaticSize.None,
+		TextTruncate = hero and Enum.TextTruncate.None or Enum.TextTruncate.AtEnd,
+		LayoutOrder = hero and 2 or 1,
+		Parent = titleParent,
 	})
 	local subLabel = label(theme, {
 		Text = subtitle or "",
@@ -5152,6 +5192,10 @@ function Page:Board(opts)
 		return (localPointer() - pan) / zoom
 	end
 
+	local function fineZoom()
+		return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+	end
+
 	local function zoomTo(value, focus)
 		value = math.clamp(value, ZOOM_MIN, ZOOM_MAX)
 		focus = focus or viewSize() / 2
@@ -5185,6 +5229,19 @@ function Page:Board(opts)
 
 	local pathsBroken = false
 	local pathWires = {}
+	local wireAlpha = 0
+	local jitter = 0
+
+	local function fadePath(wire)
+		local path = wire.Path
+		if not path then
+			return
+		end
+		pcall(function()
+			path.Transparency = 1 - wireAlpha
+		end)
+		path.Visible = wireAlpha > 0.02 and not wire.Hidden
+	end
 
 	-- Path2D ignores UIScale, so its points are converted to screen pixels by hand
 	local function setPath(wire)
@@ -5194,8 +5251,9 @@ function Page:Board(opts)
 			return
 		end
 		local k = scaleNow()
+		local nudge = Vector2.new(jitter, 0)
 		local function px(p)
-			return (p * zoom + pan) * k
+			return (p * zoom + pan) * k + nudge
 		end
 		local p0, p1, p2, p3 = px(bez[1]), px(bez[2]), px(bez[3]), px(bez[4])
 		local a, b = p1 - p0, p2 - p3
@@ -5219,8 +5277,9 @@ function Page:Board(opts)
 				pathWires[wire] = true
 			end
 			wire.Bez = { p0, p1, p2, p3 }
+			wire.Hidden = false
 			setPath(wire)
-			wire.Path.Visible = true
+			fadePath(wire)
 		end)
 		if not ok then
 			pathsBroken = true
@@ -5239,6 +5298,8 @@ function Page:Board(opts)
 		if pathsBroken then
 			return
 		end
+		-- Path2D only redraws when its points change, so alternate a tiny offset
+		jitter = jitter == 0 and 0.01 or 0
 		for wire in pairs(pathWires) do
 			pcall(setPath, wire)
 		end
@@ -5485,6 +5546,7 @@ function Page:Board(opts)
 			for _, seg in ipairs(tempWire.Segments) do
 				seg.Visible = false
 			end
+			tempWire.Hidden = true
 			if tempWire.Path then
 				tempWire.Path.Visible = false
 			end
@@ -6025,7 +6087,8 @@ function Page:Board(opts)
 			if panelOpen and p.X > vp.X - PANEL_W - 12 then
 				return
 			end
-			zoomTo(targetZoom * (input.Position.Z > 0 and 1.12 or 1 / 1.12), p)
+			local step = fineZoom() and 1.025 or 1.12
+			zoomTo(targetZoom * (input.Position.Z > 0 and step or 1 / step), p)
 			return
 		end
 		if not grabbed or not isMove(input) then
@@ -6260,10 +6323,18 @@ function Page:Board(opts)
 	window._tooltip(zoomReset, "Fit to view")
 	local zoomIn = pillButton(zoomPill, 3, "plus", nil, false, "Zoom in")
 	zoomOut.MouseButton1Click:Connect(function()
-		zoomTo(math.floor(targetZoom * 10 + 0.5) / 10 - 0.1)
+		if fineZoom() then
+			zoomTo(targetZoom - 0.02)
+		else
+			zoomTo(math.floor(targetZoom * 10 + 0.5) / 10 - 0.1)
+		end
 	end)
 	zoomIn.MouseButton1Click:Connect(function()
-		zoomTo(math.floor(targetZoom * 10 + 0.5) / 10 + 0.1)
+		if fineZoom() then
+			zoomTo(targetZoom + 0.02)
+		else
+			zoomTo(math.floor(targetZoom * 10 + 0.5) / 10 + 0.1)
+		end
 	end)
 	zoomReset.MouseButton1Click:Connect(function()
 		canvas.FitView()
@@ -6427,11 +6498,21 @@ function Page:Board(opts)
 	end)
 
 	local lastScale = scaleNow()
+	local lastOrigin = viewport.AbsolutePosition
 	table.insert(window._steppers, function(dt)
 		local nowScale = scaleNow()
-		if nowScale ~= lastScale then
-			lastScale = nowScale
+		local origin = viewport.AbsolutePosition
+		if nowScale ~= lastScale or origin ~= lastOrigin then
+			lastScale, lastOrigin = nowScale, origin
 			syncPaths()
+		end
+		local settled = window.ActivePage == page and page._alpha > 0.96 and window._vis > 0.96
+		local nextAlpha = settled and math.min(1, wireAlpha + dt / 0.3) or 0
+		if nextAlpha ~= wireAlpha then
+			wireAlpha = nextAlpha
+			for wire in pairs(pathWires) do
+				fadePath(wire)
+			end
 		end
 		local goal = panelOpen and 0 or (PANEL_W + 30)
 		if math.abs(panelOffset - goal) > 0.3 then
