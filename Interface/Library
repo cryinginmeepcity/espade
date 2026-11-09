@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.6.0" }
+local Isle = { Version = "4.7.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -5994,11 +5994,15 @@ function Page:Board(opts)
 	local FLATNESS = 0.35
 	local samples = table.create(SAMPLES + 1)
 
-	local function drawCurve(wire, p0, n0, p3, n3)
+	local function drawCurve(wire, p0, n0, p3, n3, bow)
 		local dist = (p3 - p0).Magnitude
 		local reach = math.clamp(dist * 0.4, 10, 150)
 		local p1 = p0 + n0 * reach
 		local p2 = p3 + n3 * reach
+		if bow then
+			p1 += bow
+			p2 += bow
+		end
 		for i = 0, SAMPLES do
 			local t = i / SAMPLES
 			local mt = 1 - t
@@ -6076,16 +6080,53 @@ function Page:Board(opts)
 		return Vector2.new(v.X * c - v.Y * s, v.X * s + v.Y * c)
 	end
 
-	local function placeEdge(edge)
+	local placeEdge
+
+	-- links between the same two nodes are fanned out so they never overlap
+	local function laneShift(edge, a, b)
+		local ids = {}
+		for id, other in pairs(edges) do
+			if (other.From == edge.From and other.To == edge.To) or (other.From == edge.To and other.To == edge.From) then
+				table.insert(ids, id)
+			end
+		end
+		if #ids < 2 then
+			return Vector2.zero
+		end
+		table.sort(ids)
+		local lane = (table.find(ids, edge.Id) or 1) - (#ids + 1) / 2
+		local first, second = a, b
+		if tostring(a.Id) > tostring(b.Id) then
+			first, second = b, a
+		end
+		local d = nodeCenter(second) - nodeCenter(first)
+		local length = d.Magnitude
+		if length < 1 then
+			return Vector2.zero
+		end
+		local side = Vector2.new(-d.Y, d.X) / length
+		return side * lane * math.clamp(length * 0.3, 44, 110)
+	end
+
+	local function placePair(fromId, toId)
+		for _, other in pairs(edges) do
+			if (other.From == fromId and other.To == toId) or (other.From == toId and other.To == fromId) then
+				placeEdge(other)
+			end
+		end
+	end
+
+	placeEdge = function(edge)
 		local a, b = nodes[edge.From], nodes[edge.To]
 		if not a or not b then
 			return
 		end
-		local pa, na = anchor(a, nodeCenter(b))
-		local pb, nb = anchor(b, nodeCenter(a))
+		local shift = laneShift(edge, a, b)
+		local pa, na = anchor(a, nodeCenter(b) + shift)
+		local pb, nb = anchor(b, nodeCenter(a) + shift)
 		local tip = pb + nb * 4
 		local wingA, wingB = tip + rotated(nb, 27) * 9, tip + rotated(nb, -27) * 9
-		local middle = drawCurve(edge, pa, na, tip + nb * (WIRE * 0.75), nb)
+		local middle = drawCurve(edge, pa, na, tip + nb * (WIRE * 0.75), nb, shift)
 		edge.Chip.Position = UDim2.fromOffset(middle.X, middle.Y)
 		if edge.Path and drawPath(edge.Head, { wingA, tip, wingB }) then
 			edge.ArrowA.Visible = false
@@ -6521,7 +6562,7 @@ function Page:Board(opts)
 			return nil
 		end
 		for _, edge in pairs(edges) do
-			if (edge.From == fromId and edge.To == toId) or (edge.From == toId and edge.To == fromId) then
+			if edge.From == fromId and edge.To == toId then
 				if labelText and labelText ~= "" then
 					edge.Label = labelText
 					renderChip(edge)
@@ -6605,7 +6646,7 @@ function Page:Board(opts)
 		end)
 		edges[id] = edge
 		renderChip(edge)
-		placeEdge(edge)
+		placePair(fromId, toId)
 		changed()
 		return edge
 	end
@@ -6621,13 +6662,14 @@ function Page:Board(opts)
 		if data.Reverse then
 			edge.From, edge.To = edge.To, edge.From
 		end
-		placeEdge(edge)
+		placePair(edge.From, edge.To)
 		changed()
 	end
 
 	function canvas.RemoveEdge(edge)
 		local was = selectedEdge == edge
 		destroyEdge(edge)
+		placePair(edge.From, edge.To)
 		if was and opts.OnSelect then
 			fire(opts.OnSelect, nil)
 		end
