@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.5.0" }
+local Isle = { Version = "4.6.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -941,31 +941,292 @@ local function newIcon(theme, parent, name, colorKey, size, props, fallback)
 	return obj
 end
 
-local function maskBox(theme, box)
+local CHAR_IN = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local CHAR_OUT = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local CHAR_FLOW = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local CARET_BLINK = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, 0.3)
+
+local measureCache = {}
+local measureCount = 0
+
+local function measure(text, size)
+	if text == "" then
+		return 0
+	end
+	local key = size .. "|" .. text
+	local cached = measureCache[key]
+	if cached then
+		return cached
+	end
+	local function width(value)
+		local ok, bounds = pcall(function()
+			return TextService:GetTextSize(value, size, Enum.Font.BuilderSans, Vector2.new(100000, 200))
+		end)
+		if ok and bounds then
+			return bounds.X
+		end
+		return (utf8.len(value) or #value) * size * 0.52
+	end
+	local result = width(text .. "|") - width("|")
+	measureCount += 1
+	if measureCount > 6000 then
+		table.clear(measureCache)
+		measureCount = 0
+	end
+	measureCache[key] = result
+	return result
+end
+
+local smoothOf = setmetatable({}, { __mode = "k" })
+
+-- animated single-line text: the TextBox stays as the invisible input, glyphs are drawn on top
+local function smoothBox(window, box)
+	local theme = window.Theme
+	local size = box.TextSize
 	box.TextTransparency = 1
-	local mask = label(theme, {
-		Text = "",
-		TextSize = box.TextSize,
+	box.ClipsDescendants = true
+
+	local placeholder = label(theme, {
+		Text = box.PlaceholderText,
+		TextSize = size,
 		FontFace = box.FontFace,
-		TextXAlignment = box.TextXAlignment,
-		TextTruncate = Enum.TextTruncate.None,
+		Color = "Muted",
 		Size = UDim2.fromScale(1, 1),
-		ClipsDescendants = true,
 		Parent = box,
 	})
-	local function update()
-		if box.Text == "" then
-			mask.Text = box.PlaceholderText
-			theme:Set(mask, "TextColor3", "Muted")
-		else
-			mask.Text = string.rep("•", utf8.len(box.Text) or #box.Text)
-			theme:Set(mask, "TextColor3", "Text")
+	local holder = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = box })
+	local selection = create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		Size = UDim2.fromOffset(0, size + 6),
+		BorderSizePixel = 0,
+		BackgroundTransparency = 0.78,
+		Visible = false,
+		Parent = holder,
+		corner(3),
+	})
+	theme:Bind(selection, { BackgroundColor3 = "Accent" })
+	local caret = create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		Size = UDim2.fromOffset(1.5, size + 4),
+		BorderSizePixel = 0,
+		BackgroundTransparency = 1,
+		ZIndex = 2,
+		Parent = holder,
+		round(),
+	})
+	theme:Bind(caret, { BackgroundColor3 = "Text" })
+
+	local chars = {}
+	local widths = {}
+	local masked = false
+	local focused = false
+	local offset = 0
+	local blink
+	local api = {}
+
+	local function shown(char)
+		return masked and "•" or char
+	end
+
+	local function recompute()
+		local buffer = ""
+		for i, entry in ipairs(chars) do
+			buffer ..= shown(entry.Char)
+			widths[i] = measure(buffer, size)
+		end
+		for i = #chars + 1, #widths do
+			widths[i] = nil
 		end
 	end
-	box:GetPropertyChangedSignal("Text"):Connect(update)
-	box:GetPropertyChangedSignal("PlaceholderText"):Connect(update)
-	update()
-	return mask
+
+	local function makeLabel(char)
+		return label(theme, {
+			Text = shown(char),
+			TextSize = size,
+			FontFace = box.FontFace,
+			TextTruncate = Enum.TextTruncate.None,
+			Size = UDim2.new(0, size * 2, 1, 0),
+			Parent = holder,
+		})
+	end
+
+	local function reflow(instant)
+		for i, entry in ipairs(chars) do
+			local x = i == 1 and 0 or widths[i - 1]
+			local target = UDim2.fromOffset(x, 0)
+			local glyph = entry.Label
+			if entry.New then
+				entry.New = nil
+				entry.X = x
+				if instant then
+					glyph.Position = target
+				else
+					glyph.Position = UDim2.fromOffset(x, 6)
+					glyph.TextTransparency = 1
+					glyph.TextSize = math.max(1, size - 4)
+					tween(glyph, CHAR_IN, { Position = target, TextTransparency = 0, TextSize = size })
+				end
+			elseif entry.X ~= x then
+				entry.X = x
+				if instant then
+					glyph.Position = target
+				else
+					tween(glyph, CHAR_FLOW, { Position = target })
+				end
+			end
+		end
+	end
+
+	local function charsBefore(bytePos)
+		if not bytePos or bytePos < 1 then
+			return #chars
+		end
+		local ok, count = pcall(utf8.len, box.Text, 1, bytePos - 1)
+		return math.clamp(ok and count or #chars, 0, #chars)
+	end
+
+	local function updateCaret(animate)
+		local index = charsBefore(box.CursorPosition)
+		local x = index == 0 and 0 or (widths[index] or 0)
+		local total = widths[#chars] or 0
+		local s = window.Scale.Scale > 0 and window.Scale.Scale or 1
+		local view = math.max(10, box.AbsoluteSize.X / s)
+		if x + offset > view - 2 then
+			offset = view - 2 - x
+		elseif x + offset < 0 then
+			offset = -x
+		end
+		offset = math.clamp(offset, math.min(0, view - total - 4), 0)
+		local holderGoal = UDim2.fromOffset(offset, 0)
+		local caretGoal = UDim2.new(0, x, 0.5, 0)
+		if animate then
+			tween(holder, CHAR_FLOW, { Position = holderGoal })
+			tween(caret, CHAR_OUT, { Position = caretGoal })
+		else
+			holder.Position = holderGoal
+			caret.Position = caretGoal
+		end
+		if blink then
+			blink:Cancel()
+			blink = nil
+		end
+		caret.BackgroundTransparency = focused and 0 or 1
+		if focused then
+			blink = tween(caret, CARET_BLINK, { BackgroundTransparency = 1 })
+		end
+
+		local start = -1
+		pcall(function()
+			start = box.SelectionStart
+		end)
+		local cursor = box.CursorPosition
+		if focused and start and start ~= -1 and cursor ~= -1 and start ~= cursor then
+			local a = charsBefore(math.min(start, cursor))
+			local b = charsBefore(math.max(start, cursor))
+			local x1 = a == 0 and 0 or (widths[a] or 0)
+			local x2 = b == 0 and 0 or (widths[b] or 0)
+			selection.Visible = true
+			selection.Position = UDim2.new(0, x1, 0.5, 0)
+			selection.Size = UDim2.fromOffset(math.max(0, x2 - x1), size + 6)
+		else
+			selection.Visible = false
+		end
+	end
+
+	local function update(instant)
+		local fresh = {}
+		for _, code in utf8.codes(box.Text) do
+			table.insert(fresh, utf8.char(code))
+		end
+		local oldLen, newLen = #chars, #fresh
+		local prefix = 0
+		while prefix < oldLen and prefix < newLen and chars[prefix + 1].Char == fresh[prefix + 1] do
+			prefix += 1
+		end
+		local suffix = 0
+		while suffix < oldLen - prefix and suffix < newLen - prefix and chars[oldLen - suffix].Char == fresh[newLen - suffix] do
+			suffix += 1
+		end
+		local result = table.create(newLen)
+		for i = 1, prefix do
+			result[i] = chars[i]
+		end
+		for i = prefix + 1, oldLen - suffix do
+			local glyph = chars[i].Label
+			if instant then
+				glyph:Destroy()
+			else
+				tween(glyph, CHAR_OUT, { TextTransparency = 1, Position = glyph.Position - UDim2.fromOffset(0, 5) })
+				task.delay(0.11, function()
+					glyph:Destroy()
+				end)
+			end
+		end
+		for i = prefix + 1, newLen - suffix do
+			result[i] = { Char = fresh[i], Label = makeLabel(fresh[i]), New = true }
+		end
+		for i = 0, suffix - 1 do
+			result[newLen - i] = chars[oldLen - i]
+		end
+		chars = result
+		recompute()
+		reflow(instant)
+		updateCaret(not instant)
+		placeholder.Visible = newLen == 0
+	end
+
+	function api.SetMasked(value)
+		value = value and true or false
+		if masked == value then
+			return
+		end
+		masked = value
+		for _, entry in ipairs(chars) do
+			entry.Label.Text = shown(entry.Char)
+			entry.X = nil
+		end
+		recompute()
+		reflow(false)
+		updateCaret(true)
+	end
+
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		local ok = pcall(update, false)
+		if not ok then
+			pcall(update, true)
+		end
+	end)
+	box:GetPropertyChangedSignal("CursorPosition"):Connect(function()
+		updateCaret(true)
+	end)
+	pcall(function()
+		box:GetPropertyChangedSignal("SelectionStart"):Connect(function()
+			updateCaret(false)
+		end)
+	end)
+	-- the native placeholder would show through, so it is moved into the overlay label
+	local function takePlaceholder()
+		if box.PlaceholderText ~= "" then
+			placeholder.Text = box.PlaceholderText
+			box.PlaceholderText = ""
+		end
+	end
+	box:GetPropertyChangedSignal("PlaceholderText"):Connect(takePlaceholder)
+	takePlaceholder()
+	box.Focused:Connect(function()
+		focused = true
+		updateCaret(false)
+	end)
+	box.FocusLost:Connect(function()
+		focused = false
+		updateCaret(false)
+	end)
+
+	update(true)
+	smoothOf[box] = api
+	return api
 end
 
 local function eyeButton(theme, parent, props)
@@ -1011,14 +1272,15 @@ end
 
 local function secretControl(theme, box, holder, rightOffset)
 	local control = { Hidden = true }
-	local mask = maskBox(theme, box)
+	local smooth = smoothOf[box]
 	local eye, slash = eyeButton(theme, holder, {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -rightOffset, 0.5, 0),
 	})
 	local function apply()
-		mask.Visible = control.Hidden
-		box.TextTransparency = control.Hidden and 1 or 0
+		if smooth then
+			smooth.SetMasked(control.Hidden)
+		end
 		slash.Visible = not control.Hidden
 	end
 	eye.MouseButton1Click:Connect(function()
@@ -1030,9 +1292,10 @@ local function secretControl(theme, box, holder, rightOffset)
 		apply()
 	end
 	function control:Destroy()
-		mask:Destroy()
 		eye:Destroy()
-		box.TextTransparency = 0
+		if smooth then
+			smooth.SetMasked(false)
+		end
 	end
 	apply()
 	return control
@@ -2100,7 +2363,7 @@ function Isle.new(options)
 			wanted = (active._hero and HERO_TOP or HEADER) + active.Content.AbsoluteSize.Y / s
 		end
 		if window._modals > 0 then
-			wanted = math.max(wanted, 320)
+			wanted = math.max(wanted, window._modalHeight or 320)
 		end
 		wanted = math.clamp(wanted, window.MinHeight, limit)
 		if math.abs(window._height - wanted) > 0.1 then
@@ -2791,6 +3054,7 @@ function Window:_modal(opts, withInput)
 			Parent = box,
 		})
 		theme:Bind(input, { PlaceholderColor3 = "Muted" })
+		smoothBox(self, input)
 		input.Focused:Connect(function()
 			tween(boxStroke, Ease.Hover, { Transparency = theme:Get("FocusT") })
 		end)
@@ -2882,6 +3146,373 @@ end
 
 function Window:Confirm(opts)
 	return self:_modal(opts, false)
+end
+
+function Window:Wizard(opts)
+	opts = opts or {}
+	local theme = self.Theme
+	local host = self.Card
+	local steps = opts.Pages or {}
+	local total = math.max(#steps, 1)
+	local BODY_H = 196
+	self._modals += 1
+	self._modalHeight = 470
+	self:CloseMenu()
+
+	local dim = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 90,
+		Parent = host,
+		corner(RADIUS),
+	})
+	theme:Bind(dim, { BackgroundColor3 = "DimColor" })
+	local panel = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(340, 104 + BODY_H + 62),
+		BackgroundTransparency = 1,
+		ZIndex = 91,
+		Parent = host,
+		corner(20),
+	})
+	local panelStroke, panelShadow = elevate(theme, panel, 48, 18)
+	theme:Unbind(panelStroke, "Transparency")
+	panelStroke.Transparency = 1
+	if panelShadow then
+		theme:Unbind(panelShadow, "Transparency")
+		panelShadow.Transparency = 1
+	end
+	local panelScale = create("UIScale", { Scale = 0.92, Parent = panel })
+	local body = create("CanvasGroup", {
+		BackgroundTransparency = 1,
+		GroupTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 92,
+		Parent = panel,
+	})
+
+	local tile = create("Frame", { Position = UDim2.fromOffset(20, 20), Size = UDim2.fromOffset(38, 38), Parent = body, corner(12) })
+	theme:Bind(tile, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+	newIcon(theme, tile, opts.Icon or "shield", opts.Danger and "Danger" or "Text", 18, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+	})
+	local titleLabel = label(theme, {
+		Text = opts.Title or "",
+		FontFace = Fonts.SemiBold,
+		TextSize = 17,
+		Position = UDim2.fromOffset(20, 68),
+		Size = UDim2.new(1, -40, 0, 22),
+		Parent = body,
+	})
+	local closeBtn = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -14, 0, 14),
+		Size = UDim2.fromOffset(28, 28),
+		Parent = body,
+		round(),
+	})
+	theme:Bind(closeBtn, { BackgroundColor3 = "HoverColor" })
+	hoverFill(theme, closeBtn, "Clear", "HoverT", "PressT")
+	newIcon(theme, closeBtn, "x", "Muted", 14, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+	})
+
+	local stage = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, 100),
+		Size = UDim2.new(1, 0, 0, BODY_H),
+		ClipsDescendants = true,
+		Parent = body,
+	})
+
+	local closed = false
+	local index = 1
+	local phraseOk = {}
+	local views = {}
+	local confirmBtn, confirmLabel
+
+	local function close(confirmed)
+		if closed then
+			return
+		end
+		closed = true
+		self._modals = math.max(0, self._modals - 1)
+		self._modalHeight = nil
+		tween(panelScale, Ease.Hover, { Scale = 0.95 })
+		tween(panel, Ease.Hover, { BackgroundTransparency = 1 })
+		tween(body, Ease.Hover, { GroupTransparency = 1 })
+		tween(panelStroke, Ease.Hover, { Transparency = 1 })
+		tween(dim, Ease.Hover, { BackgroundTransparency = 1 })
+		if panelShadow then
+			tween(panelShadow, Ease.Hover, { Transparency = 1 })
+		end
+		task.delay(0.2, function()
+			dim:Destroy()
+			panel:Destroy()
+		end)
+		if confirmed and opts.Callback then
+			fire(opts.Callback)
+		end
+	end
+
+	local function ready()
+		for i, step in ipairs(steps) do
+			if step.Phrase and not phraseOk[i] then
+				return false
+			end
+		end
+		return index == total
+	end
+
+	local function refreshConfirm()
+		if not confirmBtn then
+			return
+		end
+		local ok = ready()
+		tween(confirmBtn, Ease.Hover, { BackgroundTransparency = ok and 0 or 0.72 })
+		tween(confirmLabel, Ease.Hover, { TextTransparency = ok and 0 or 0.45 })
+	end
+
+	for i, step in ipairs(steps) do
+		local view = create("CanvasGroup", {
+			BackgroundTransparency = 1,
+			GroupTransparency = i == 1 and 0 or 1,
+			Size = UDim2.fromScale(1, 1),
+			Visible = i == 1,
+			Parent = stage,
+			pad(0, 20, 0, 20),
+			list({ Padding = UDim.new(0, 10) }),
+		})
+		views[i] = view
+		label(theme, {
+			Text = step.Body or "",
+			TextSize = 14,
+			Color = "SubText",
+			TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.None,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = 1,
+			Parent = view,
+		})
+		for n, point in ipairs(step.Points or {}) do
+			local row = create("Frame", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				LayoutOrder = 1 + n,
+				Parent = view,
+			})
+			local mark = create("Frame", { Position = UDim2.fromOffset(1, 7), Size = UDim2.fromOffset(5, 5), Parent = row, round() })
+			theme:Bind(mark, { BackgroundColor3 = opts.Danger and "Danger" or "Accent" })
+			label(theme, {
+				Text = point,
+				TextSize = 14,
+				TextWrapped = true,
+				TextTruncate = Enum.TextTruncate.None,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				Position = UDim2.fromOffset(16, 0),
+				Size = UDim2.new(1, -16, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				Parent = row,
+			})
+		end
+		if step.Phrase then
+			local chip = create("Frame", {
+				Size = UDim2.new(0, 0, 0, 30),
+				AutomaticSize = Enum.AutomaticSize.X,
+				LayoutOrder = 20,
+				Parent = view,
+				corner(9),
+				pad(0, 12, 0, 12),
+			})
+			theme:Bind(chip, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+			label(theme, {
+				Text = step.Phrase,
+				FontFace = Fonts.SemiBold,
+				TextSize = 14,
+				TextTruncate = Enum.TextTruncate.None,
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(0, 0, 1, 0),
+				Parent = chip,
+			})
+			local box = create("Frame", { Size = UDim2.new(1, 0, 0, 44), LayoutOrder = 21, Parent = view, corner(12) })
+			theme:Bind(box, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
+			local boxStroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 1, Parent = box })
+			theme:Bind(boxStroke, { Color = "Accent" })
+			local input = label(theme, {
+				Class = "TextBox",
+				Text = "",
+				PlaceholderText = step.Placeholder or "Type the phrase",
+				ClearTextOnFocus = false,
+				TextSize = 15,
+				Position = UDim2.fromOffset(14, 0),
+				Size = UDim2.new(1, -28, 1, 0),
+				TextTruncate = Enum.TextTruncate.None,
+				ClipsDescendants = true,
+				Parent = box,
+			})
+			smoothBox(self, input)
+			input.Focused:Connect(function()
+				tween(boxStroke, Ease.Hover, { Transparency = theme:Get("FocusT") })
+			end)
+			input.FocusLost:Connect(function()
+				tween(boxStroke, Ease.Hover, { Transparency = phraseOk[i] and theme:Get("FocusT") or 1 })
+			end)
+			input:GetPropertyChangedSignal("Text"):Connect(function()
+				phraseOk[i] = input.Text == step.Phrase
+				theme:Set(boxStroke, "Color", phraseOk[i] and "Safe" or "Accent", Ease.Hover)
+				refreshConfirm()
+			end)
+			view:SetAttribute("HasInput", true)
+			step._input = input
+		end
+	end
+
+	local footer = create("Frame", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -16),
+		Size = UDim2.fromOffset(132, 34),
+		Parent = body,
+	})
+	local function navButton(iconName, x)
+		local btn = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(x, 0, 0.5, 0),
+			Size = UDim2.fromOffset(34, 34),
+			Parent = footer,
+			round(),
+		})
+		theme:Bind(btn, { BackgroundColor3 = "FieldColor" })
+		hoverFill(theme, btn, "FieldT", "PressT")
+		pressable(btn, 0.92)
+		local icon = newIcon(theme, btn, iconName, "Text", 15, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+		})
+		return btn, icon
+	end
+	local prevBtn, prevIcon = navButton("chevron-left", 0.13)
+	local nextBtn, nextIcon = navButton("chevron-right", 0.87)
+	local counter = label(theme, {
+		Text = "1 / " .. total,
+		FontFace = Fonts.Medium,
+		TextSize = 13,
+		Color = "SubText",
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Size = UDim2.fromScale(1, 1),
+		Parent = footer,
+	})
+
+	confirmBtn = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -62),
+		Size = UDim2.new(1, -40, 0, 40),
+		BackgroundTransparency = 0.72,
+		Visible = false,
+		Parent = body,
+		corner(12),
+	})
+	theme:Bind(confirmBtn, { BackgroundColor3 = opts.Danger and "Danger" or "Primary" })
+	pressable(confirmBtn, 0.97)
+	confirmLabel = label(theme, {
+		Text = opts.Action or "Confirm",
+		FontFace = Fonts.SemiBold,
+		TextSize = 14,
+		Color = "PrimaryText",
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTransparency = 0.45,
+		Size = UDim2.fromScale(1, 1),
+		Parent = confirmBtn,
+	})
+
+	local function show(target, instant)
+		target = math.clamp(target, 1, total)
+		local dir = target >= index and 1 or -1
+		local old = views[index]
+		local fresh = views[target]
+		if target ~= index and old and fresh then
+			tween(old, Ease.Hover, { GroupTransparency = 1, Position = UDim2.fromOffset(-24 * dir, 0) })
+			task.delay(0.18, function()
+				if old.Parent and views[index] ~= old then
+					old.Visible = false
+				end
+			end)
+			fresh.Visible = true
+			fresh.Position = UDim2.fromOffset(24 * dir, 0)
+			fresh.GroupTransparency = 1
+			tween(fresh, Ease.Smooth, { GroupTransparency = 0, Position = UDim2.new() })
+		end
+		index = target
+		local step = steps[index] or {}
+		titleLabel.Text = step.Title or opts.Title or ""
+		if not instant then
+			reveal(titleLabel, 0, Ease.Smooth)
+		end
+		counter.Text = index .. " / " .. total
+		prevIcon:SetColor(index > 1 and "Text" or "Muted", Ease.Hover)
+		nextIcon:SetColor(index < total and "Text" or "Muted", Ease.Hover)
+		confirmBtn.Visible = index == total
+		refreshConfirm()
+		if step._input then
+			task.delay(0.2, function()
+				if not closed and index == target then
+					step._input:CaptureFocus()
+				end
+			end)
+		end
+	end
+
+	prevBtn.MouseButton1Click:Connect(function()
+		if index > 1 then
+			show(index - 1)
+		end
+	end)
+	nextBtn.MouseButton1Click:Connect(function()
+		if index < total then
+			show(index + 1)
+		end
+	end)
+	confirmBtn.MouseButton1Click:Connect(function()
+		if ready() then
+			close(true)
+		end
+	end)
+	closeBtn.MouseButton1Click:Connect(function()
+		close(false)
+	end)
+	dim.MouseButton1Click:Connect(function()
+		close(false)
+	end)
+
+	show(1, true)
+	tween(panelScale, Ease.Pop, { Scale = 1 })
+	tween(panel, Ease.Hover, { BackgroundTransparency = 0 })
+	tween(body, Ease.Smooth, { GroupTransparency = 0 })
+	tween(panelStroke, Ease.Smooth, { Transparency = theme:Get("StrokeT") })
+	tween(dim, Ease.Smooth, { BackgroundTransparency = theme:Get("DimT") })
+	if panelShadow then
+		tween(panelShadow, Ease.Smooth, { Transparency = theme:Get("ShadowT") })
+	end
+	return function()
+		close(false)
+	end
 end
 
 function Window:Page(opts)
@@ -3536,6 +4167,7 @@ function Section:Input(opts)
 		Parent = frame,
 	})
 	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+	smoothBox(self.Window, box)
 	local secret
 	if opts.Secret then
 		secret = secretControl(theme, box, frame, 2)
@@ -4032,6 +4664,7 @@ function Page:Field(opts)
 		Parent = frame,
 	})
 	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+	smoothBox(self.Window, box)
 
 	local action = create("TextButton", {
 		Text = "",
@@ -4244,6 +4877,7 @@ function Page:Search(opts)
 		Parent = frame,
 	})
 	theme:Bind(box, { PlaceholderColor3 = "Muted" })
+	smoothBox(self.Window, box)
 	local hint = kbd(theme, frame, opts.Hint or "Ctrl F", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -10, 0.5, 0),
