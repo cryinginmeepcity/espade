@@ -4866,7 +4866,7 @@ function Page:Board(opts)
 		Text = "Tap a node to link",
 		FontFace = Fonts.Medium,
 		TextSize = 13,
-		Color = "AccentText",
+		Color = "PrimaryText",
 		TextXAlignment = Enum.TextXAlignment.Center,
 		AutomaticSize = Enum.AutomaticSize.X,
 		TextTruncate = Enum.TextTruncate.None,
