@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.4.0" }
+local Isle = { Version = "4.5.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -157,7 +157,7 @@ end
 local NAV_H = 40
 local NAV_GAP = 12
 local HEADER = 58
-local HERO_TOP = 7
+local HERO_TOP = HEADER
 local HANDLE_GAP = 12
 local HANDLE_H = 5
 local RADIUS = 24
@@ -3182,20 +3182,20 @@ function Page:Heading(title, subtitle, opts)
 	if hero then
 		titleParent = create("Frame", {
 			BackgroundTransparency = 1,
-			Size = UDim2.new(1, -80, 0, 32),
+			Size = UDim2.new(1, 0, 0, 30),
 			LayoutOrder = 1,
 			Parent = frame,
 			list({
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, 11),
+				Padding = UDim.new(0, 9),
 			}),
 		})
 		create("ImageLabel", {
 			Image = logo.Image,
 			BackgroundTransparency = 1,
 			ScaleType = Enum.ScaleType.Fit,
-			Size = UDim2.fromOffset(32, 32),
+			Size = UDim2.fromOffset(26, 26),
 			LayoutOrder = 1,
 			Parent = titleParent,
 		})
@@ -3204,7 +3204,7 @@ function Page:Heading(title, subtitle, opts)
 	local titleLabel = label(theme, {
 		Text = title or "",
 		FontFace = Fonts.SemiBold,
-		TextSize = compact and 20 or 28,
+		TextSize = hero and 24 or (compact and 20 or 28),
 		Size = hero and UDim2.new(0, 0, 1, 0) or UDim2.new(1, 0, 0, compact and 24 or 32),
 		AutomaticSize = hero and Enum.AutomaticSize.X or Enum.AutomaticSize.None,
 		TextTruncate = hero and Enum.TextTruncate.None or Enum.TextTruncate.AtEnd,
