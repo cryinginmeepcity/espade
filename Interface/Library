@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.2.0" }
+local Isle = { Version = "4.3.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -5205,6 +5205,8 @@ function Page:Board(opts)
 		applyView()
 	end
 
+	local wireAlpha = 0
+
 	local function newSegment(parent, colorKey)
 		local seg = create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -5215,6 +5217,7 @@ function Page:Board(opts)
 			round(),
 		})
 		theme:Bind(seg, { BackgroundColor3 = colorKey })
+		seg.BackgroundTransparency = 1 - wireAlpha
 		return seg
 	end
 
@@ -5229,31 +5232,66 @@ function Page:Board(opts)
 
 	local pathsBroken = false
 	local pathWires = {}
-	local wireAlpha = 0
+	local wireProgress = 0
 	local jitter = 0
+	local pathFade
 
 	local function fadePath(wire)
 		local path = wire.Path
 		if not path then
 			return
 		end
-		pcall(function()
+		if pathFade == nil then
+			pathFade = pcall(function()
+				path.Transparency = 0.5
+				assert(math.abs(path.Transparency - 0.5) < 0.01)
+			end)
+		end
+		if pathFade then
 			path.Transparency = 1 - wireAlpha
-		end)
-		path.Visible = wireAlpha > 0.02 and not wire.Hidden
+		elseif wireAlpha < 1 then
+			-- no transparency support: blend the stroke into the card colour instead
+			theme:Unbind(path, "Color3")
+			path.Color3 = theme:Get("Background"):Lerp(theme:Get(wire.Key), wireAlpha)
+		else
+			theme:Set(path, "Color3", wire.Key)
+		end
+		path.Visible = wireAlpha > 0.01 and not wire.Hidden
+	end
+
+	local function fadeWire(wire)
+		fadePath(wire)
+		local t = 1 - wireAlpha
+		for _, seg in ipairs(wire.Segments) do
+			seg.BackgroundTransparency = t
+		end
+		if wire.ArrowA then
+			wire.ArrowA.BackgroundTransparency = t
+			wire.ArrowB.BackgroundTransparency = t
+		end
 	end
 
 	-- Path2D ignores UIScale, so its points are converted to screen pixels by hand
 	local function setPath(wire)
 		local bez = wire.Bez
 		local path = wire.Path
-		if not bez or not path then
+		if not path or not (bez or wire.Poly) then
 			return
 		end
 		local k = scaleNow()
 		local nudge = Vector2.new(jitter, 0)
 		local function px(p)
 			return (p * zoom + pan) * k + nudge
+		end
+		if wire.Poly then
+			local points = {}
+			for i, p in ipairs(wire.Poly) do
+				local q = px(p)
+				points[i] = Path2DControlPoint.new(UDim2.fromOffset(q.X, q.Y))
+			end
+			path.Thickness = WIRE * zoom * k
+			path:SetControlPoints(points)
+			return
 		end
 		local p0, p1, p2, p3 = px(bez[1]), px(bez[2]), px(bez[3]), px(bez[4])
 		local a, b = p1 - p0, p2 - p3
@@ -5276,7 +5314,11 @@ function Page:Board(opts)
 				wire.Path = path
 				pathWires[wire] = true
 			end
-			wire.Bez = { p0, p1, p2, p3 }
+			if p2 then
+				wire.Bez = { p0, p1, p2, p3 }
+			else
+				wire.Poly = p0
+			end
 			wire.Hidden = false
 			setPath(wire)
 			fadePath(wire)
@@ -5401,10 +5443,16 @@ function Page:Board(opts)
 		local pa, na = anchor(a, nodeCenter(b))
 		local pb, nb = anchor(b, nodeCenter(a))
 		local tip = pb + nb * 4
-		local middle = drawCurve(edge, pa, na, tip, nb)
+		local wingA, wingB = tip + rotated(nb, 27) * 9, tip + rotated(nb, -27) * 9
+		local middle = drawCurve(edge, pa, na, tip + nb * (WIRE * 0.75), nb)
 		edge.Chip.Position = UDim2.fromOffset(middle.X, middle.Y)
-		placeSegment(edge.ArrowA, tip, tip + rotated(nb, 27) * 9)
-		placeSegment(edge.ArrowB, tip, tip + rotated(nb, -27) * 9)
+		if edge.Path and drawPath(edge.Head, { wingA, tip, wingB }) then
+			edge.ArrowA.Visible = false
+			edge.ArrowB.Visible = false
+		else
+			placeSegment(edge.ArrowA, tip, wingA)
+			placeSegment(edge.ArrowB, tip, wingB)
+		end
 	end
 
 	local function refreshEdges(node)
@@ -5418,8 +5466,12 @@ function Page:Board(opts)
 	local function styleEdge(edge)
 		local on = edge == selectedEdge
 		edge.Key = on and "Accent" or "Wire"
+		edge.Head.Key = edge.Key
 		if edge.Path then
 			theme:Set(edge.Path, "Color3", edge.Key, Ease.Hover)
+		end
+		if edge.Head.Path then
+			theme:Set(edge.Head.Path, "Color3", edge.Key, Ease.Hover)
 		end
 		for _, seg in ipairs(edge.Segments) do
 			theme:Set(seg, "BackgroundColor3", edge.Key, Ease.Hover)
@@ -5792,6 +5844,11 @@ function Page:Board(opts)
 			edge.Path = nil
 		end
 		pathWires[edge] = nil
+		if edge.Head.Path then
+			edge.Head.Path:Destroy()
+			edge.Head.Path = nil
+		end
+		pathWires[edge.Head] = nil
 		edge.ArrowA:Destroy()
 		edge.ArrowB:Destroy()
 		edges[edge.Id] = nil
@@ -5875,6 +5932,7 @@ function Page:Board(opts)
 			Segments = {},
 			Parent = edgesLayer,
 			Key = "Wire",
+			Head = { Segments = {}, Key = "Wire" },
 			Chip = chip,
 			ChipStroke = chipStroke,
 			ChipLabel = chipLabel,
@@ -6126,7 +6184,7 @@ function Page:Board(opts)
 		grabbed.moved += delta.Magnitude
 		if grabbed.kind == "bg" then
 			targetPan += delta
-			pan = targetPan
+			pan += delta
 			applyView()
 		elseif grabbed.kind == "node" then
 			local node = grabbed.node
@@ -6507,12 +6565,15 @@ function Page:Board(opts)
 			syncPaths()
 		end
 		local settled = window.ActivePage == page and page._alpha > 0.96 and window._vis > 0.96
-		local nextAlpha = settled and math.min(1, wireAlpha + dt / 0.3) or 0
-		if nextAlpha ~= wireAlpha then
-			wireAlpha = nextAlpha
-			for wire in pairs(pathWires) do
-				fadePath(wire)
+		local nextProgress = settled and math.min(1, wireProgress + dt / 0.5) or 0
+		if nextProgress ~= wireProgress then
+			wireProgress = nextProgress
+			wireAlpha = smooth(wireProgress)
+			for _, edge in pairs(edges) do
+				fadeWire(edge)
+				fadePath(edge.Head)
 			end
+			fadeWire(tempWire)
 		end
 		local goal = panelOpen and 0 or (PANEL_W + 30)
 		if math.abs(panelOffset - goal) > 0.3 then
