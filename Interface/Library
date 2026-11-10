@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.8.0" }
+local Isle = { Version = "4.9.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -6082,8 +6082,16 @@ function Page:Board(opts)
 
 	local placeEdge
 
-	-- links between the same two nodes are fanned out so they never overlap
-	local function laneShift(edge, a, b)
+	local settling = {}
+	local SIDES = {
+		right = Vector2.new(1, 0),
+		left = Vector2.new(-1, 0),
+		bottom = Vector2.new(0, 1),
+		top = Vector2.new(0, -1),
+	}
+
+	-- lane index among links that join the same two nodes, in either direction
+	local function laneOf(edge, a, b)
 		local ids = {}
 		for id, other in pairs(edges) do
 			if (other.From == edge.From and other.To == edge.To) or (other.From == edge.To and other.To == edge.From) then
@@ -6092,23 +6100,72 @@ function Page:Board(opts)
 		end
 		edge.ChipAt = 0.5
 		if #ids < 2 then
-			return Vector2.zero
+			return 0
 		end
 		table.sort(ids)
 		local lane = (table.find(ids, edge.Id) or 1) - (#ids + 1) / 2
-		local first, second = a, b
-		if tostring(a.Id) > tostring(b.Id) then
-			first, second = b, a
+		local forward = tostring(a.Id) <= tostring(b.Id)
+		edge.ChipAt = 0.5 + (forward and lane or -lane) * 0.2
+		return lane
+	end
+
+	local function sidePoint(side, along)
+		local hw, hh = NODE_W / 2, NODE_H / 2
+		local normal = SIDES[side]
+		if normal.X ~= 0 then
+			return Vector2.new(normal.X * hw, math.clamp(along, -(hh - 13), hh - 13)), normal
 		end
-		local d = nodeCenter(second) - nodeCenter(first)
-		local length = d.Magnitude
-		if length < 1 then
-			return Vector2.zero
+		return Vector2.new(math.clamp(along, -(hw - 24), hw - 24), normal.Y * hh), normal
+	end
+
+	-- picks the sides that face each other: straight across when the nodes line up,
+	-- out of the side and into the top or bottom when they sit diagonally
+	local function route(edge, a, b)
+		local hw, hh = NODE_W / 2, NODE_H / 2
+		local d = nodeCenter(b) - nodeCenter(a)
+		local slide = laneOf(edge, a, b) * 22
+		if math.abs(d.X) <= hw + 12 then
+			local sideA = d.Y >= 0 and "bottom" or "top"
+			local sideB = d.Y >= 0 and "top" or "bottom"
+			local offA, normalA = sidePoint(sideA, d.X * 0.25 + slide)
+			local offB, normalB = sidePoint(sideB, -d.X * 0.25 + slide)
+			return offA, normalA, offB, normalB
+		elseif math.abs(d.Y) <= hh + 12 then
+			local sideA = d.X >= 0 and "right" or "left"
+			local sideB = d.X >= 0 and "left" or "right"
+			local offA, normalA = sidePoint(sideA, d.Y * 0.25 + slide)
+			local offB, normalB = sidePoint(sideB, -d.Y * 0.25 + slide)
+			return offA, normalA, offB, normalB
 		end
-		-- labels sit at different points along the pair so a tight gap stays readable
-		edge.ChipAt = 0.5 + (first == a and lane or -lane) * 0.22
-		local side = Vector2.new(-d.Y, d.X) / length
-		return side * lane * math.clamp(length * 0.12, 20, 34)
+		local offA, normalA = sidePoint(d.X >= 0 and "right" or "left", d.Y * 0.08 + slide)
+		local offB, normalB = sidePoint(d.Y >= 0 and "top" or "bottom", -d.X * 0.22 + slide)
+		return offA, normalA, offB, normalB
+	end
+
+	local function drawEdge(edge)
+		local a, b = nodes[edge.From], nodes[edge.To]
+		local cur = edge.Route
+		if not a or not b or not cur then
+			return
+		end
+		local na, nb = cur[2], cur[4]
+		if na.Magnitude < 0.01 or nb.Magnitude < 0.01 then
+			return
+		end
+		na, nb = na.Unit, nb.Unit
+		local pa = nodeCenter(a) + cur[1]
+		local pb = nodeCenter(b) + cur[3]
+		local tip = pb + nb * 4
+		local wingA, wingB = tip + rotated(nb, 27) * 9, tip + rotated(nb, -27) * 9
+		local middle = drawCurve(edge, pa, na, tip + nb * (WIRE * 0.75), nb)
+		edge.Chip.Position = UDim2.fromOffset(middle.X, middle.Y)
+		if edge.Path and drawPath(edge.Head, { wingA, tip, wingB }) then
+			edge.ArrowA.Visible = false
+			edge.ArrowB.Visible = false
+		else
+			placeSegment(edge.ArrowA, tip, wingA)
+			placeSegment(edge.ArrowB, tip, wingB)
+		end
 	end
 
 	local function placePair(fromId, toId)
@@ -6124,19 +6181,37 @@ function Page:Board(opts)
 		if not a or not b then
 			return
 		end
-		local shift = laneShift(edge, a, b)
-		local pa, na = anchor(a, nodeCenter(b) + shift)
-		local pb, nb = anchor(b, nodeCenter(a) + shift)
-		local tip = pb + nb * 4
-		local wingA, wingB = tip + rotated(nb, 27) * 9, tip + rotated(nb, -27) * 9
-		local middle = drawCurve(edge, pa, na, tip + nb * (WIRE * 0.75), nb, shift)
-		edge.Chip.Position = UDim2.fromOffset(middle.X, middle.Y)
-		if edge.Path and drawPath(edge.Head, { wingA, tip, wingB }) then
-			edge.ArrowA.Visible = false
-			edge.ArrowB.Visible = false
+		local offA, normalA, offB, normalB = route(edge, a, b)
+		edge.Goal = { offA, normalA, offB, normalB }
+		if not edge.Route then
+			edge.Route = { offA, normalA, offB, normalB }
 		else
-			placeSegment(edge.ArrowA, tip, wingA)
-			placeSegment(edge.ArrowB, tip, wingB)
+			settling[edge] = true
+		end
+		drawEdge(edge)
+	end
+
+	-- eases a link to its new sides so it never jumps when the route changes
+	local function settleEdges(dt)
+		local alpha = damp(14, dt)
+		for edge in pairs(settling) do
+			local cur, goal = edge.Route, edge.Goal
+			if not edges[edge.Id] or not cur or not goal then
+				settling[edge] = nil
+			else
+				local gap = 0
+				for i = 1, 4 do
+					cur[i] = cur[i]:Lerp(goal[i], alpha)
+					gap = math.max(gap, (cur[i] - goal[i]).Magnitude * (i % 2 == 0 and 40 or 1))
+				end
+				if gap < 0.4 then
+					for i = 1, 4 do
+						cur[i] = goal[i]
+					end
+					settling[edge] = nil
+				end
+				drawEdge(edge)
+			end
 		end
 	end
 
@@ -6537,6 +6612,7 @@ function Page:Board(opts)
 		edge.ArrowA:Destroy()
 		edge.ArrowB:Destroy()
 		edges[edge.Id] = nil
+		settling[edge] = nil
 		if selectedEdge == edge then
 			selectedEdge = nil
 		end
@@ -6664,6 +6740,7 @@ function Page:Board(opts)
 		end
 		if data.Reverse then
 			edge.From, edge.To = edge.To, edge.From
+			edge.Route = nil
 		end
 		placePair(edge.From, edge.To)
 		changed()
@@ -7244,6 +7321,7 @@ function Page:Board(opts)
 	local lastScale = scaleNow()
 	local lastOrigin = viewport.AbsolutePosition
 	table.insert(window._steppers, function(dt)
+		settleEdges(dt)
 		local nowScale = scaleNow()
 		local origin = viewport.AbsolutePosition
 		if nowScale ~= lastScale or origin ~= lastOrigin then
