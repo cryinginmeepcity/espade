@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "4.7.0" }
+local Isle = { Version = "4.8.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -6000,15 +6000,15 @@ function Page:Board(opts)
 		local p1 = p0 + n0 * reach
 		local p2 = p3 + n3 * reach
 		if bow then
-			p1 += bow
-			p2 += bow
+			p1 += bow * 1.2
+			p2 += bow * 1.2
 		end
 		for i = 0, SAMPLES do
 			local t = i / SAMPLES
 			local mt = 1 - t
 			samples[i + 1] = p0 * (mt * mt * mt) + p1 * (3 * mt * mt * t) + p2 * (3 * mt * t * t) + p3 * (t * t * t)
 		end
-		local middle = samples[SAMPLES / 2 + 1]
+		local middle = samples[math.clamp(math.floor(SAMPLES * (wire.ChipAt or 0.5) + 0.5), 0, SAMPLES) + 1]
 		local segs = wire.Segments
 		if drawPath(wire, p0, p1, p2, p3) then
 			for _, seg in ipairs(segs) do
@@ -6090,6 +6090,7 @@ function Page:Board(opts)
 				table.insert(ids, id)
 			end
 		end
+		edge.ChipAt = 0.5
 		if #ids < 2 then
 			return Vector2.zero
 		end
@@ -6104,8 +6105,10 @@ function Page:Board(opts)
 		if length < 1 then
 			return Vector2.zero
 		end
+		-- labels sit at different points along the pair so a tight gap stays readable
+		edge.ChipAt = 0.5 + (first == a and lane or -lane) * 0.22
 		local side = Vector2.new(-d.Y, d.X) / length
-		return side * lane * math.clamp(length * 0.3, 44, 110)
+		return side * lane * math.clamp(length * 0.12, 20, 34)
 	end
 
 	local function placePair(fromId, toId)
