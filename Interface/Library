@@ -5,12 +5,13 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.5.0" }
+local Isle = { Version = "5.5.1" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
 Isle.IconUrl = ""
 Isle.SmoothPaths = false
+Isle.Shadows = true
 local GRAIN_STRENGTH = 0.5
 
 local FONT = "rbxasset://fonts/families/BuilderSans.json"
@@ -254,6 +255,9 @@ local function fire(fn, ...)
 end
 
 local function newShadow(parent, props)
+	if Isle.Shadows == false then
+		return nil
+	end
 	local ok, inst = pcall(Instance.new, "UIShadow")
 	if not ok or not inst then
 		return nil
@@ -2437,6 +2441,7 @@ function Isle.new(options)
 	local indicatorVel, indicatorSizeVel = Vector2.zero, Vector2.zero
 
 	window:_connect(RunService.RenderStepped, function(dt)
+		local loopStart = os.clock()
 		dt = math.min(dt, 0.1)
 		local target = window.Visible and 1 or 0
 		if math.abs(window._vis - target) > 0.001 then
@@ -2620,6 +2625,9 @@ function Isle.new(options)
 
 		for _, step in ipairs(window._steppers) do
 			step(dt, s)
+		end
+		if os.clock() - loopStart > 0.05 then
+			print(string.format("[Isle] frame loop took %.2fs", os.clock() - loopStart))
 		end
 	end)
 
