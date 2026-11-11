@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.3.0" }
+local Isle = { Version = "5.4.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -2735,127 +2735,169 @@ function Window:Destroy()
 	end)
 end
 
+local TOAST_MORPH = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local TOAST_RESIZE = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local TOAST_TONES = { Danger = "Danger", Safe = "Safe", Warning = "Warning", Success = "Safe", Error = "Danger" }
+
+-- one island at a time: a new message replaces the current one in place instead of queueing behind it
 function Window:Notify(opts)
 	if type(opts) == "string" then
 		opts = { Title = opts }
 	end
-	table.insert(self._toasts, opts or {})
-	if self._toastBusy then
+	opts = opts or {}
+	if self._destroyed then
 		return
 	end
-	self._toastBusy = true
-	task.spawn(function()
-		while #self._toasts > 0 and not self._destroyed do
-			self:_showToast(table.remove(self._toasts, 1))
-		end
-		self._toastBusy = false
-	end)
-end
-
-function Window:_showToast(opts)
 	local theme = self.Theme
 	local island = self._island
-	local canvas = island.Canvas
-	local toneKey = ({ Danger = "Danger", Safe = "Safe", Warning = "Warning", Success = "Safe", Error = "Danger" })[opts.Type]
-		or "Accent"
-
-	for _, child in ipairs(canvas:GetChildren()) do
-		if child:IsA("GuiObject") then
-			child:Destroy()
-		end
+	local back, canvas = island.Back, island.Canvas
+	local state = self._toast
+	if not state then
+		state = { Token = 0, Shown = false, Count = 0, Over = false }
+		self._toast = state
+		back.MouseEnter:Connect(function()
+			state.Over = true
+		end)
+		back.MouseLeave:Connect(function()
+			state.Over = false
+			if state.Shown and state.Expired then
+				state.Hide(state.Token)
+			end
+		end)
+		back.InputBegan:Connect(function(input)
+			if isPress(input) and state.Shown then
+				state.Hide(state.Token)
+			end
+		end)
 	end
 
-	local row = create("Frame", {
+	local title = tostring(opts.Title or "")
+	local content = opts.Content and tostring(opts.Content) or ""
+	local toneKey = TOAST_TONES[opts.Type] or "Accent"
+	local key = title .. "\0" .. content .. "\0" .. toneKey
+	state.Count = (state.Shown and state.Key == key) and state.Count + 1 or 1
+	state.Key = key
+	state.Token += 1
+	state.Expired = false
+	local mine = state.Token
+
+	local old = state.Row
+	if old then
+		tween(old, Ease.Quick, { GroupTransparency = 1 })
+		task.delay(0.12, function()
+			old:Destroy()
+		end)
+	end
+
+	local row = create("CanvasGroup", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 0, 1, 0),
-		AutomaticSize = Enum.AutomaticSize.X,
+		GroupTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
 		Parent = canvas,
-		pad(0, 18, 0, 16),
 		list({
 			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			Padding = UDim.new(0, 9),
 		}),
 	})
+	state.Row = row
 	local toneDot = create("Frame", { Size = UDim2.fromOffset(7, 7), LayoutOrder = 1, Parent = row, round() })
 	theme:Bind(toneDot, { BackgroundColor3 = toneKey })
-	local toneGlow = newShadow(toneDot, { BlurRadius = UDim.new(0, 10), ShowBehindParent = true, Transparency = 0.35 })
-	if toneGlow then
-		theme:Bind(toneGlow, { Color = toneKey })
-	end
-	local title = label(theme, {
-		Text = opts.Title or "",
-		FontFace = Fonts.Medium,
-		TextSize = 14,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.new(0, 0, 1, 0),
-		TextTruncate = Enum.TextTruncate.None,
-		TextTransparency = 1,
-		LayoutOrder = 2,
-		Parent = row,
-	})
-	local content
-	if opts.Content and opts.Content ~= "" then
-		content = label(theme, {
-			Text = tostring(opts.Content),
-			TextSize = 14,
-			Color = "SubText",
+	local width = 16 + 7 + 18
+	local function text(value, order, font, colorKey, size)
+		label(theme, {
+			Text = value,
+			FontFace = font,
+			TextSize = size or 14,
+			Color = colorKey,
 			AutomaticSize = Enum.AutomaticSize.X,
 			Size = UDim2.new(0, 0, 1, 0),
 			TextTruncate = Enum.TextTruncate.None,
-			TextTransparency = 1,
-			LayoutOrder = 3,
+			LayoutOrder = order,
 			Parent = row,
 		})
+		width += 9 + math.ceil(measure(value, size or 14) * 1.04) + 1
+	end
+	if title ~= "" then
+		text(title, 2, Fonts.Medium, "Text")
+	end
+	if content ~= "" then
+		text(content, 3, Fonts.Regular, "SubText")
+	end
+	if state.Count > 1 then
+		text("×" .. state.Count, 4, Fonts.Medium, "Muted", 13)
+	end
+	width = math.clamp(width, 44, 520)
+	local goal = { Size = UDim2.fromOffset(width, 40), Position = UDim2.new(0.5, 0, 0, 18) }
+
+	if state.Shown then
+		tween(back, TOAST_RESIZE, goal)
+		tween(canvas, TOAST_RESIZE, goal)
+		tween(row, Ease.Hover, { GroupTransparency = 0 })
+	else
+		state.Shown = true
+		local dot = UDim2.fromOffset(12, 12)
+		local low = UDim2.new(0.5, 0, 0, 32)
+		back.Size, canvas.Size = dot, dot
+		back.Position, canvas.Position = low, low
+		tween(back, Ease.Hover, { BackgroundTransparency = 0 })
+		tween(island.Stroke, Ease.Hover, { Transparency = theme:Get("StrokeT") })
+		tween(canvas, Ease.Hover, { GroupTransparency = 0 })
+		if island.Shadow then
+			tween(island.Shadow, Ease.Smooth, { Transparency = theme:Get("ShadowT") })
+		end
+		tween(back, TOAST_MORPH, goal)
+		tween(canvas, TOAST_MORPH, goal)
+		task.delay(0.12, function()
+			if row.Parent then
+				tween(row, Ease.Smooth, { GroupTransparency = 0 })
+			end
+		end)
 	end
 
-	local width = 16 + 7 + 9 + textWidth(title.Text, Fonts.Medium, 14) + 18
-	if content then
-		width += 9 + textWidth(content.Text, Fonts.Regular, 14)
+	function state.Hide(token)
+		if token ~= state.Token or not state.Shown then
+			return
+		end
+		state.Shown = false
+		state.Count = 0
+		state.Token += 1
+		local leaving = state.Row
+		state.Row = nil
+		if leaving then
+			tween(leaving, Ease.Quick, { GroupTransparency = 1 })
+		end
+		local dot = { Size = UDim2.fromOffset(12, 12), Position = UDim2.new(0.5, 0, 0, 32) }
+		tween(back, TOAST_RESIZE, dot)
+		tween(canvas, TOAST_RESIZE, dot)
+		task.delay(0.14, function()
+			if state.Shown then
+				return
+			end
+			tween(back, Ease.Hover, { BackgroundTransparency = 1 })
+			tween(island.Stroke, Ease.Hover, { Transparency = 1 })
+			tween(canvas, Ease.Hover, { GroupTransparency = 1 })
+			if island.Shadow then
+				tween(island.Shadow, Ease.Hover, { Transparency = 1 })
+			end
+		end)
+		task.delay(0.4, function()
+			if leaving then
+				leaving:Destroy()
+			end
+		end)
 	end
-	width = math.min(math.ceil(width), 520)
 
-	local morph = TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	local shrink = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-	local back = island.Back
-	back.Size = UDim2.fromOffset(12, 12)
-	canvas.Size = back.Size
-	back.Position = UDim2.new(0.5, 0, 0, 32)
-	canvas.Position = back.Position
-	local rest = UDim2.new(0.5, 0, 0, 18)
-	tween(back, Ease.Hover, { BackgroundTransparency = 0 })
-	tween(island.Stroke, Ease.Hover, { Transparency = theme:Get("StrokeT") })
-	tween(canvas, Ease.Hover, { GroupTransparency = 0 })
-	if island.Shadow then
-		tween(island.Shadow, Ease.Smooth, { Transparency = theme:Get("ShadowT") })
-	end
-	tween(back, morph, { Size = UDim2.fromOffset(width, 40), Position = rest })
-	tween(canvas, morph, { Size = UDim2.fromOffset(width, 40), Position = rest })
-	task.wait(0.2)
-	tween(title, Ease.Smooth, { TextTransparency = 0 })
-	if content then
-		task.wait(0.05)
-		tween(content, Ease.Smooth, { TextTransparency = 0 })
-	end
-
-	task.wait(opts.Duration or 3)
-
-	tween(title, Ease.Hover, { TextTransparency = 1 })
-	if content then
-		tween(content, Ease.Hover, { TextTransparency = 1 })
-	end
-	task.wait(0.12)
-	local dot = { Size = UDim2.fromOffset(12, 12), Position = UDim2.new(0.5, 0, 0, 32) }
-	tween(back, shrink, dot)
-	tween(canvas, shrink, dot)
-	task.wait(0.2)
-	tween(back, Ease.Hover, { BackgroundTransparency = 1 })
-	tween(island.Stroke, Ease.Hover, { Transparency = 1 })
-	tween(canvas, Ease.Hover, { GroupTransparency = 1 })
-	if island.Shadow then
-		tween(island.Shadow, Ease.Hover, { Transparency = 1 })
-	end
-	task.wait(0.24)
+	task.delay(math.clamp(opts.Duration or 2.4, 0.8, 8), function()
+		if mine ~= state.Token then
+			return
+		end
+		state.Expired = true
+		if not state.Over then
+			state.Hide(mine)
+		end
+	end)
 end
 
 function Window:FocusSearch()
