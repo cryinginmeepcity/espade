@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.1.0" }
+local Isle = { Version = "5.2.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -1086,7 +1086,6 @@ local function smoothBox(window, box)
 	local masked = false
 	local focused = false
 	local offset = 0
-	local blink
 	local api = {}
 
 	local function isBlank(char)
@@ -1137,7 +1136,12 @@ local function smoothBox(window, box)
 		return math.clamp(ok and count or #chars, 0, #chars)
 	end
 
-	local function updateCaret(animate)
+	local caretX = 0
+	local caretGoal = -1
+	local clock = 0
+
+	-- runs every frame while focused, so the caret always follows the laid-out glyphs
+	local function step(dt)
 		local x = edgeX(charsBefore(box.CursorPosition))
 		local total = edgeX(#chars)
 		local view = math.max(10, box.AbsoluteSize.X / unscale())
@@ -1147,23 +1151,20 @@ local function smoothBox(window, box)
 			offset = -x
 		end
 		offset = math.clamp(offset, math.min(0, view - total - 4), 0)
-		local holderGoal = UDim2.fromOffset(offset, 0)
-		local caretGoal = UDim2.new(0, x, 0.5, 0)
-		if animate then
-			tween(holder, CHAR_FLOW, { Position = holderGoal })
-			tween(caret, CHAR_OUT, { Position = caretGoal })
-		else
-			holder.Position = holderGoal
-			caret.Position = caretGoal
+		holder.Position = UDim2.fromOffset(math.floor(offset + 0.5), 0)
+		if math.abs(x - caretGoal) > 0.01 then
+			caretGoal = x
+			clock = 0
 		end
-		if blink then
-			blink:Cancel()
-			blink = nil
+		clock += dt
+		caretX += (x - caretX) * damp(32, dt)
+		if math.abs(x - caretX) < 0.3 then
+			caretX = x
 		end
-		caret.BackgroundTransparency = focused and 0 or 1
-		if focused then
-			blink = tween(caret, CARET_BLINK, { BackgroundTransparency = 1 })
-		end
+		caret.Position = UDim2.new(0, math.floor(caretX + 0.5), 0.5, 0)
+		local visible = focused and (clock % 1.06) < 0.58
+		local goal = visible and 0 or 1
+		caret.BackgroundTransparency += (goal - caret.BackgroundTransparency) * damp(24, dt)
 
 		local start = -1
 		pcall(function()
@@ -1177,6 +1178,22 @@ local function smoothBox(window, box)
 			selection.Position = UDim2.new(0, x1, 0.5, 0)
 			selection.Size = UDim2.fromOffset(math.max(0, x2 - x1), size + 6)
 		else
+			selection.Visible = false
+		end
+	end
+
+	local stepper
+	local function watch(on)
+		if stepper then
+			stepper:Disconnect()
+			stepper = nil
+		end
+		if on then
+			stepper = RunService.RenderStepped:Connect(function(dt)
+				step(math.min(dt, 0.1))
+			end)
+		else
+			caret.BackgroundTransparency = 1
 			selection.Visible = false
 		end
 	end
@@ -1231,7 +1248,6 @@ local function smoothBox(window, box)
 			entry.Cell.LayoutOrder = i * 2
 		end
 		placeholder.Visible = newLen == 0
-		task.defer(updateCaret, false)
 	end
 
 	function api.SetMasked(value)
@@ -1243,24 +1259,12 @@ local function smoothBox(window, box)
 		for _, entry in ipairs(chars) do
 			shape(entry)
 		end
-		task.defer(updateCaret, false)
 	end
 
 	box:GetPropertyChangedSignal("Text"):Connect(function()
 		if not pcall(update, false) then
 			pcall(update, true)
 		end
-	end)
-	box:GetPropertyChangedSignal("CursorPosition"):Connect(function()
-		updateCaret(true)
-	end)
-	pcall(function()
-		box:GetPropertyChangedSignal("SelectionStart"):Connect(function()
-			updateCaret(false)
-		end)
-	end)
-	row:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		updateCaret(false)
 	end)
 	-- the native placeholder would show through, so it is moved into the overlay label
 	local function takePlaceholder()
@@ -1273,11 +1277,15 @@ local function smoothBox(window, box)
 	takePlaceholder()
 	box.Focused:Connect(function()
 		focused = true
-		updateCaret(false)
+		caretX = edgeX(charsBefore(box.CursorPosition))
+		watch(true)
 	end)
 	box.FocusLost:Connect(function()
 		focused = false
-		updateCaret(false)
+		watch(false)
+	end)
+	box.Destroying:Connect(function()
+		watch(false)
 	end)
 
 	update(true)
