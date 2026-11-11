@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.7.0" }
+local Isle = { Version = "5.8.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -8452,6 +8452,439 @@ function Page:Board(opts)
 	history.Last = snapshot()
 	applyView()
 	return canvas
+end
+
+-- helpers: files, http, queues, players, shorthand calls
+
+do
+	local HttpService = game:GetService("HttpService")
+
+	local Files = { Locked = false }
+	Isle.Files = Files
+
+	function Files.Can()
+		return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+	end
+
+	function Files.Read(path)
+		if not Files.Can() then
+			return nil
+		end
+		local ok, exists = pcall(isfile, path)
+		if not ok or not exists then
+			return nil
+		end
+		local read, value = pcall(readfile, path)
+		return read and type(value) == "string" and value or nil
+	end
+
+	function Files.Write(path, value)
+		if Files.Locked or not Files.Can() then
+			return false
+		end
+		return (pcall(writefile, path, tostring(value)))
+	end
+
+	function Files.Delete(path)
+		if type(delfile) ~= "function" then
+			return false
+		end
+		return (pcall(delfile, path))
+	end
+
+	function Files.ReadJson(path, default)
+		local raw = Files.Read(path)
+		if raw then
+			local ok, data = pcall(HttpService.JSONDecode, HttpService, raw)
+			if ok and type(data) == "table" then
+				return data
+			end
+		end
+		return default
+	end
+
+	function Files.WriteJson(path, value)
+		local ok, encoded = pcall(HttpService.JSONEncode, HttpService, value)
+		return ok and Files.Write(path, encoded) or false
+	end
+
+	-- a table kept in a JSON file, Save batches writes
+	function Files.Store(path, defaults, delay)
+		local store = { Path = path, Data = Files.ReadJson(path, nil) or {} }
+		for key, value in pairs(defaults or {}) do
+			if store.Data[key] == nil then
+				store.Data[key] = value
+			end
+		end
+		local queued = false
+		function store:Flush()
+			queued = false
+			return Files.WriteJson(path, self.Data)
+		end
+		function store:Save()
+			if queued then
+				return
+			end
+			queued = true
+			task.delay(delay or 0.5, function()
+				if queued then
+					store:Flush()
+				end
+			end)
+		end
+		return store
+	end
+
+	local Http = {}
+	Isle.Http = Http
+	local cache, lastCall = {}, {}
+
+	local function requestFn()
+		return (syn and syn.request) or (http and http.request) or http_request or request
+	end
+
+	function Http.Available()
+		return type(requestFn()) == "function"
+	end
+
+	function Http.Decode(body)
+		local ok, data = pcall(HttpService.JSONDecode, HttpService, body or "")
+		if ok then
+			return data
+		end
+		return nil
+	end
+
+	local function pace(url, gap)
+		if not gap or gap <= 0 then
+			return
+		end
+		local host = tostring(url):match("^%a+://([^/]+)") or ""
+		local wait = math.max((lastCall[host] or 0) + gap - os.clock(), 0)
+		lastCall[host] = os.clock() + wait
+		if wait > 0 then
+			task.wait(wait)
+		end
+	end
+
+	local function send(options)
+		local req = requestFn()
+		if type(req) ~= "function" then
+			return nil, "No HTTP request function"
+		end
+		local ok, response = pcall(req, options)
+		if not ok or type(response) ~= "table" then
+			return nil, "Request failed"
+		end
+		local code = response.StatusCode or 200
+		return { StatusCode = code, Body = tostring(response.Body or ""), Ok = code >= 200 and code < 300 }
+	end
+
+	-- opts: Headers, Cache (seconds), Gap (seconds between calls to one host)
+	function Http.Get(url, opts)
+		opts = opts or {}
+		local hit = opts.Cache and cache[url]
+		if hit and os.clock() - hit.At < opts.Cache then
+			return hit.Response
+		end
+		pace(url, opts.Gap)
+		-- some executors stall the game after their own request function, so plain GETs use the engine call
+		local plain = true
+		for key in pairs(opts.Headers or {}) do
+			if key ~= "Accept" then
+				plain = false
+			end
+		end
+		local response, err
+		if plain then
+			local ok, body = pcall(function()
+				return game:HttpGetAsync(url)
+			end)
+			if ok and type(body) == "string" then
+				response = { StatusCode = 200, Body = body, Ok = true }
+			end
+		end
+		if not response then
+			response, err = send({ Url = url, Method = "GET", Headers = opts.Headers or {} })
+		end
+		if response and response.Ok and opts.Cache then
+			cache[url] = { At = os.clock(), Response = response }
+		end
+		return response, err
+	end
+
+	function Http.Json(url, opts)
+		local response, err = Http.Get(url, opts)
+		if not response then
+			return nil, err
+		end
+		if not response.Ok then
+			return nil, "HTTP " .. tostring(response.StatusCode), response
+		end
+		local data = Http.Decode(response.Body)
+		if data == nil then
+			return nil, "Bad JSON", response
+		end
+		return data, nil, response
+	end
+
+	-- a table body is sent as JSON
+	function Http.Post(url, body, opts)
+		opts = opts or {}
+		local headers = {}
+		for key, value in pairs(opts.Headers or {}) do
+			headers[key] = value
+		end
+		if type(body) == "table" then
+			local ok, encoded = pcall(HttpService.JSONEncode, HttpService, body)
+			if not ok then
+				return nil, "Body can't be encoded"
+			end
+			body = encoded
+			headers["Content-Type"] = headers["Content-Type"] or "application/json"
+		end
+		pace(url, opts.Gap)
+		return send({ Url = url, Method = opts.Method or "POST", Headers = headers, Body = body })
+	end
+
+	function Http.ClearCache()
+		table.clear(cache)
+	end
+
+	local Queue = {}
+	Isle.Queue = Queue
+
+	-- runs fn(item, index) for every item, a few at a time; opts: Workers, Gap, OnProgress, OnDone
+	function Queue.Each(items, fn, opts)
+		opts = opts or {}
+		local run = { Total = #items, Done = 0, Failed = 0, Finished = false, Cancelled = false, Results = {} }
+		local workers = math.max(1, opts.Workers or 2)
+		local nextIndex, active = 1, 0
+
+		local function finish()
+			if not run.Finished then
+				run.Finished = true
+				if opts.OnDone then
+					task.spawn(opts.OnDone, run)
+				end
+			end
+		end
+
+		local function pump()
+			while active < workers and nextIndex <= run.Total and not run.Cancelled do
+				local index = nextIndex
+				nextIndex += 1
+				active += 1
+				task.spawn(function()
+					local ok, result = pcall(fn, items[index], index)
+					run.Done += 1
+					if ok then
+						run.Results[index] = result
+					else
+						run.Failed += 1
+					end
+					if opts.OnProgress and not run.Cancelled then
+						pcall(opts.OnProgress, run.Done, run.Total, items[index], ok and result or nil)
+					end
+					if opts.Gap and opts.Gap > 0 and not run.Cancelled then
+						task.wait(opts.Gap)
+					end
+					active -= 1
+					task.defer(pump)
+				end)
+			end
+			if active == 0 and (nextIndex > run.Total or run.Cancelled) then
+				finish()
+			end
+		end
+
+		function run:Cancel()
+			self.Cancelled = true
+			if active == 0 then
+				finish()
+			end
+		end
+
+		function run:Wait()
+			while not self.Finished do
+				task.wait()
+			end
+			return self
+		end
+
+		task.defer(pump)
+		return run
+	end
+
+	local PlayerTools = {}
+	Isle.Players = PlayerTools
+
+	-- opts: Filter, IncludeSelf, LocalFirst; a string works as Filter
+	function PlayerTools.List(opts)
+		if type(opts) == "string" then
+			opts = { Filter = opts }
+		end
+		opts = opts or {}
+		local filter = tostring(opts.Filter or ""):lower()
+		local me = Players.LocalPlayer
+		local all = Players:GetPlayers()
+		local out = {}
+		for _, player in ipairs(all) do
+			local haystack = (player.DisplayName .. " " .. player.Name):lower()
+			local match = filter == "" or haystack:find(filter, 1, true) ~= nil
+			if match and (opts.IncludeSelf ~= false or player ~= me) then
+				table.insert(out, player)
+			end
+		end
+		table.sort(out, function(a, b)
+			if opts.LocalFirst ~= false and a ~= b then
+				if a == me then
+					return true
+				elseif b == me then
+					return false
+				end
+			end
+			return a.DisplayName:lower() < b.DisplayName:lower()
+		end)
+		return out, #all
+	end
+
+	function PlayerTools.Find(text)
+		return (PlayerTools.List(text))[1]
+	end
+
+	function PlayerTools.Thumb(userId, size)
+		size = size or 150
+		return "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=" .. size .. "&h=" .. size
+	end
+
+	-- calls fn(players) now and after every join or leave
+	function PlayerTools.Watch(fn, delay)
+		local handle = { Connected = true }
+		local queued = false
+		local function fire()
+			if handle.Connected then
+				fn(PlayerTools.List())
+			end
+		end
+		local function queue()
+			if queued then
+				return
+			end
+			queued = true
+			task.delay(delay or 0.2, function()
+				queued = false
+				fire()
+			end)
+		end
+		local added = Players.PlayerAdded:Connect(queue)
+		local removing = Players.PlayerRemoving:Connect(queue)
+		function handle:Disconnect()
+			self.Connected = false
+			added:Disconnect()
+			removing:Disconnect()
+		end
+		function handle:Refresh()
+			fire()
+		end
+		task.spawn(fire)
+		return handle
+	end
+
+	function PlayerTools.Each(fn, opts)
+		return Queue.Each((PlayerTools.List(opts)), fn, opts)
+	end
+
+	-- a live list of the server's players; opts: Filter, Callback(player), Menu(player), Item(player), Empty, Title
+	function Section:Players(opts)
+		opts = opts or {}
+		local section = self
+		local filter = tostring(opts.Filter or ""):lower()
+
+		local function render()
+			if section.Window._destroyed then
+				return
+			end
+			section:Clear()
+			local list, total = PlayerTools.List({ Filter = filter, IncludeSelf = opts.IncludeSelf })
+			for _, player in ipairs(list) do
+				local item = {
+					Title = player.DisplayName,
+					Subtitle = "@" .. player.Name,
+					Image = PlayerTools.Thumb(player.UserId),
+					Right = player == Players.LocalPlayer and "You" or "",
+				}
+				if opts.Item then
+					for key, value in pairs(opts.Item(player) or {}) do
+						item[key] = value
+					end
+				end
+				if opts.Callback and not item.Callback then
+					item.Callback = function()
+						opts.Callback(player)
+					end
+				end
+				if opts.Menu and not item.Menu then
+					item.Menu = function()
+						return opts.Menu(player)
+					end
+				end
+				section:Item(item)
+			end
+			if #list == 0 then
+				section:Label(opts.Empty or "Nothing matches")
+			end
+			if opts.Title ~= false then
+				section:SetTitle((opts.Title or "Players") .. " · " .. total)
+			end
+		end
+
+		local watch = PlayerTools.Watch(render, opts.Delay)
+		table.insert(section.Window._connections, watch)
+
+		local obj = {}
+		function obj:SetFilter(text)
+			filter = tostring(text or ""):lower()
+			render()
+		end
+		function obj:Refresh()
+			render()
+		end
+		function obj:Destroy()
+			watch:Disconnect()
+		end
+		return obj
+	end
+
+	-- lets the common calls take plain arguments instead of an options table
+	local function shorthand(class, name, build)
+		local original = class[name]
+		class[name] = function(self, first, ...)
+			if type(first) == "string" then
+				return original(self, build(first, ...))
+			end
+			return original(self, first, ...)
+		end
+	end
+
+	shorthand(Section, "Button", function(title, callback, icon)
+		return { Title = title, Callback = callback, Icon = icon }
+	end)
+	shorthand(Section, "Toggle", function(title, default, callback)
+		return { Title = title, Default = default, Callback = callback }
+	end)
+	shorthand(Section, "Input", function(title, callback, placeholder)
+		return { Title = title, Callback = callback, Placeholder = placeholder }
+	end)
+	shorthand(Section, "Keybind", function(title, default, callback)
+		return { Title = title, Default = default, Callback = callback }
+	end)
+	shorthand(Section, "Item", function(title, subtitle, callback)
+		return { Title = title, Subtitle = subtitle, Callback = callback }
+	end)
+	shorthand(Window, "Notify", function(title, content, kind, duration)
+		return { Title = title, Content = content, Type = kind, Duration = duration }
+	end)
 end
 
 return Isle
