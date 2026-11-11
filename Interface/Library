@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.2.0" }
+local Isle = { Version = "5.3.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -996,8 +996,9 @@ local function newIcon(theme, parent, name, colorKey, size, props, fallback)
 	return obj
 end
 
-local CHAR_IN = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local CHAR_OUT = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local CHAR_IN = TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local CHAR_TINT = TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+local CHAR_OUT = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local CHAR_FLOW = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local CARET_BLINK = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, 0.3)
 
@@ -1073,14 +1074,14 @@ local function smoothBox(window, box)
 	local caret = create("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 0, 0.5, 0),
-		Size = UDim2.fromOffset(1.5, size + 4),
+		Size = UDim2.fromOffset(2, size + 5),
 		BorderSizePixel = 0,
 		BackgroundTransparency = 1,
 		ZIndex = 2,
 		Parent = holder,
 		round(),
 	})
-	theme:Bind(caret, { BackgroundColor3 = "Text" })
+	theme:Bind(caret, { BackgroundColor3 = "Accent" })
 
 	local chars = {}
 	local masked = false
@@ -1157,14 +1158,24 @@ local function smoothBox(window, box)
 			clock = 0
 		end
 		clock += dt
-		caretX += (x - caretX) * damp(32, dt)
-		if math.abs(x - caretX) < 0.3 then
+		-- the caret trails its target and stretches towards it while it travels
+		caretX += (x - caretX) * damp(15, dt)
+		local gap = x - caretX
+		if math.abs(gap) < 0.15 then
 			caretX = x
+			gap = 0
 		end
-		caret.Position = UDim2.new(0, math.floor(caretX + 0.5), 0.5, 0)
-		local visible = focused and (clock % 1.06) < 0.58
-		local goal = visible and 0 or 1
-		caret.BackgroundTransparency += (goal - caret.BackgroundTransparency) * damp(24, dt)
+		local stretch = math.min(math.abs(gap) * 0.45, 14)
+		caret.Size = UDim2.fromOffset(2 + stretch, size + 5 - math.min(stretch * 0.25, 3))
+		caret.Position = UDim2.new(0, gap >= 0 and caretX or caretX - stretch, 0.5, 0)
+		local goal = 0
+		if clock > 0.55 then
+			goal = 0.5 - 0.5 * math.cos((clock - 0.55) * 5.2)
+		end
+		if not focused then
+			goal = 1
+		end
+		caret.BackgroundTransparency += (goal * 0.9 - caret.BackgroundTransparency) * damp(20, dt)
 
 		local start = -1
 		pcall(function()
@@ -1222,10 +1233,15 @@ local function smoothBox(window, box)
 		for i = prefix + 1, oldLen - suffix do
 			local entry = chars[i]
 			if animate then
-				entry.Cell.LayoutOrder = i * 2 - 1
-				tween(entry.Glyph, CHAR_OUT, { TextTransparency = 1, Position = UDim2.fromOffset(0, -5) })
-				task.delay(0.1, function()
-					entry.Cell:Destroy()
+				local cell = entry.Cell
+				local width = cell.AbsoluteSize.X / unscale()
+				cell.LayoutOrder = i * 2 - 1
+				cell.AutomaticSize = Enum.AutomaticSize.None
+				cell.Size = UDim2.new(0, width, 1, 0)
+				tween(cell, CHAR_OUT, { Size = UDim2.new(0, 0, 1, 0) })
+				tween(entry.Glyph, CHAR_OUT, { TextTransparency = 1, Position = UDim2.fromOffset(0, 7) })
+				task.delay(0.17, function()
+					cell:Destroy()
 				end)
 			else
 				entry.Cell:Destroy()
@@ -1234,9 +1250,24 @@ local function smoothBox(window, box)
 		for i = prefix + 1, newLen - suffix do
 			local entry = makeEntry(fresh[i])
 			if animate then
-				entry.Glyph.Position = UDim2.fromOffset(0, 6)
-				entry.Glyph.TextTransparency = 1
-				tween(entry.Glyph, CHAR_IN, { Position = UDim2.new(), TextTransparency = 0 })
+				local glyph = entry.Glyph
+				glyph.Position = UDim2.fromOffset(0, 9)
+				glyph.TextTransparency = 1
+				theme:Unbind(glyph, "TextColor3")
+				glyph.TextColor3 = theme:Get("Accent")
+				local function play()
+					if glyph.Parent then
+						tween(glyph, CHAR_IN, { Position = UDim2.new(), TextTransparency = 0 })
+						theme:Set(glyph, "TextColor3", "Text", CHAR_TINT)
+					end
+				end
+				-- pasted text rolls in as a short wave
+				local wait = math.min((i - prefix - 1) * 0.014, 0.3)
+				if wait > 0 then
+					task.delay(wait, play)
+				else
+					play()
+				end
 			end
 			result[i] = entry
 		end
