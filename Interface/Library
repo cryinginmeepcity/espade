@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.9.0" }
+local Isle = { Version = "5.10.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -9131,42 +9131,117 @@ do
 	end
 
 	-- a white tile with the code drawn from plain frames, nil when the text is too long
-	function Isle.QrFrame(text, side)
+	-- style: From and To colours, Rounded, Hole (leaves a round slot in the middle, returned second)
+	function Isle.QrFrame(text, side, style)
 		local rows = Isle.Qr(text)
 		if not rows then
 			return nil
 		end
-		local count, quiet = #rows, 3
+		style = style or {}
+		local count, quiet = #rows, style.Quiet or 3
 		local cell = math.max(2, math.floor((side or 172) / (count + quiet * 2)))
 		local full = cell * (count + quiet * 2)
+		local from = style.From or BLACK
+		local to = style.To or from
+		local plain = from == to
 		local tile = create("Frame", {
 			Size = UDim2.fromOffset(full, full),
 			BackgroundColor3 = WHITE,
 			BorderSizePixel = 0,
 			corner(12),
 		})
-		for y, row in ipairs(rows) do
-			local x = 1
-			while x <= count do
-				if row[x] then
+
+		local function shade(x, y)
+			return from:Lerp(to, math.clamp((x + y) / (2 * count), 0, 1))
+		end
+		-- x and y are zero based module coordinates
+		local function block(x, y, w, h, radius, color)
+			local part = create("Frame", {
+				Position = UDim2.fromOffset((quiet + x) * cell, (quiet + y) * cell),
+				Size = UDim2.fromOffset(w * cell, h * cell),
+				BackgroundColor3 = color or shade(x + w / 2, y + h / 2),
+				BorderSizePixel = 0,
+				Parent = tile,
+			})
+			if radius then
+				create("UICorner", { CornerRadius = UDim.new(0, radius * cell), Parent = part })
+			end
+			if not color and not plain and (w > 1 or h > 1) then
+				part.BackgroundColor3 = WHITE
+				local first, last, rotation = shade(x, y + h / 2), shade(x + w, y + h / 2), 0
+				if w == h then
+					first, last, rotation = shade(x, y), shade(x + w, y + h), 45
+				elseif h > w then
+					first, last, rotation = shade(x + w / 2, y), shade(x + w / 2, y + h), 90
+				end
+				create("UIGradient", { Color = ColorSequence.new(first, last), Rotation = rotation, Parent = part })
+			end
+			return part
+		end
+
+		local hole = style.Hole and (count >= 29 and 7 or 5) or 0
+		local middle = (count - 1) / 2
+		local function dark(x, y)
+			if x < 0 or y < 0 or x >= count or y >= count then
+				return false
+			end
+			if style.Rounded and ((x < 7 and y < 7) or (x >= count - 7 and y < 7) or (x < 7 and y >= count - 7)) then
+				return false
+			end
+			if hole > 0 and (x - middle) ^ 2 + (y - middle) ^ 2 <= (hole / 2) ^ 2 then
+				return false
+			end
+			return rows[y + 1][x + 1]
+		end
+
+		local radius = style.Rounded and 0.5 or nil
+		for y = 0, count - 1 do
+			local x = 0
+			while x < count do
+				if dark(x, y) then
 					local stop = x
-					while stop < count and row[stop + 1] do
+					while dark(stop + 1, y) do
 						stop += 1
 					end
-					create("Frame", {
-						Position = UDim2.fromOffset((quiet + x - 1) * cell, (quiet + y - 1) * cell),
-						Size = UDim2.fromOffset((stop - x + 1) * cell, cell),
-						BackgroundColor3 = BLACK,
-						BorderSizePixel = 0,
-						Parent = tile,
-					})
+					block(x, y, stop - x + 1, 1, radius)
 					x = stop + 1
 				else
 					x += 1
 				end
 			end
 		end
-		return tile
+		if style.Rounded then
+			-- vertical runs on top of the horizontal ones, so only outer corners stay round
+			for x = 0, count - 1 do
+				local y = 0
+				while y < count do
+					if dark(x, y) then
+						local stop = y
+						while dark(x, stop + 1) do
+							stop += 1
+						end
+						if stop > y then
+							block(x, y, 1, stop - y + 1, radius)
+						end
+						y = stop + 1
+					else
+						y += 1
+					end
+				end
+			end
+			for _, origin in ipairs({ { 0, 0 }, { count - 7, 0 }, { 0, count - 7 } }) do
+				block(origin[1], origin[2], 7, 7, 2)
+				block(origin[1] + 1, origin[2] + 1, 5, 5, 1.3, WHITE)
+				block(origin[1] + 2, origin[2] + 2, 3, 3, 1)
+			end
+		end
+
+		local slot
+		if hole > 0 then
+			local size = hole - 0.6
+			slot = block(middle + 0.5 - size / 2, middle + 0.5 - size / 2, size, size, size / 2)
+		end
+		return tile, slot
 	end
 
 	-- opens a Discord invite in the app when it can, otherwise copies the link
@@ -9184,77 +9259,143 @@ do
 		end)
 	end
 
-	-- a card with an avatar, a QR code and the link; opts: Title, Subtitle, Image, Link, Qr
+	-- a share card: avatar over a white tile with a styled QR code, on a gradient backdrop
+	-- opts: Title, Subtitle, Handle, Image, Link, Qr, Icon, IconFallback, Colors, Backdrop, Ink
 	function Window:LinkCard(opts)
 		opts = opts or {}
 		local theme = self.Theme
 		local link = tostring(opts.Link or "")
+		local colors = opts.Colors or { Color3.fromRGB(15, 157, 88), Color3.fromRGB(110, 158, 18) }
+		local backdropColors = opts.Backdrop or { Color3.fromRGB(96, 201, 138), Color3.fromRGB(240, 226, 120) }
+		local ink = opts.Ink or Color3.fromRGB(16, 48, 31)
 		local shell = modalShell(self, opts, 320)
 		local body = shell.Body
-		self._modalHeight = 470
+		self._modalHeight = 540
 
-		local head = create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 48), LayoutOrder = 1, Parent = body })
-		local avatar = create("ImageLabel", {
-			Size = UDim2.fromOffset(48, 48),
+		local backdrop = create("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			ScaleType = Enum.ScaleType.Crop,
-			Parent = head,
-			round(),
+			ZIndex = 91,
+			Parent = shell.Panel,
+			corner(22),
+			create("UIGradient", { Color = ColorSequence.new(backdropColors[1], backdropColors[2]), Rotation = 55 }),
 		})
-		theme:Bind(avatar, { BackgroundColor3 = "FieldColor", BackgroundTransparency = "FieldT" })
-		local initial = label(theme, {
+		tween(backdrop, Ease.Hover, { BackgroundTransparency = 0 })
+		local closeShell = shell.Close
+		function shell.Close()
+			tween(backdrop, Ease.Hover, { BackgroundTransparency = 1 })
+			closeShell()
+		end
+
+		create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = 1, Parent = body })
+
+		local code, slot = Isle.QrFrame(opts.Qr or link, 216, { From = colors[1], To = colors[2], Rounded = true, Hole = true })
+		local codeSide = code and code.Size.Y.Offset or 0
+		local sheet = create("Frame", {
+			BackgroundColor3 = WHITE,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 36 + codeSide + 44),
+			LayoutOrder = 2,
+			Parent = body,
+			corner(20),
+		})
+		if code then
+			code.AnchorPoint = Vector2.new(0.5, 0)
+			code.Position = UDim2.new(0.5, 0, 0, 36)
+			code.BackgroundTransparency = 1
+			code.Parent = sheet
+		end
+		if slot then
+			local mark = newIcon(theme, slot, opts.Icon or "link", "Text", math.floor(slot.Size.X.Offset * 0.56), {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+			}, opts.IconFallback)
+			mark:SetColor(WHITE)
+		end
+		local handle = create("TextLabel", {
+			BackgroundTransparency = 1,
 			Text = "",
 			FontFace = Fonts.SemiBold,
 			TextSize = 20,
-			Color = "SubText",
-			TextXAlignment = Enum.TextXAlignment.Center,
+			TextColor3 = WHITE,
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 0, 1, -14),
+			Size = UDim2.new(1, 0, 0, 24),
+			Parent = sheet,
+			create("UIGradient", { Color = ColorSequence.new(colors[1], colors[2]) }),
+		})
+
+		local avatar = create("ImageLabel", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0),
+			Size = UDim2.fromOffset(64, 64),
+			BackgroundColor3 = colors[1],
+			BorderSizePixel = 0,
+			ScaleType = Enum.ScaleType.Crop,
+			Parent = sheet,
+			round(),
+			create("UIStroke", { Color = WHITE, Thickness = 3 }),
+		})
+		local initial = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "",
+			FontFace = Fonts.SemiBold,
+			TextSize = 26,
+			TextColor3 = WHITE,
 			Size = UDim2.fromScale(1, 1),
 			Parent = avatar,
 		})
-		local title = label(theme, {
+
+		local title = create("TextLabel", {
+			BackgroundTransparency = 1,
 			Text = "",
 			FontFace = Fonts.SemiBold,
 			TextSize = 17,
-			Position = UDim2.fromOffset(62, 3),
-			Size = UDim2.new(1, -62, 0, 22),
-			Parent = head,
-		})
-		local subtitle = label(theme, {
-			Text = "",
-			TextSize = 13,
-			Color = "SubText",
-			Position = UDim2.fromOffset(62, 27),
-			Size = UDim2.new(1, -62, 0, 18),
-			Parent = head,
-		})
-
-		local code = Isle.QrFrame(opts.Qr or link, 200)
-		if code then
-			local holder = create("Frame", {
-				BackgroundTransparency = 1,
-				Size = UDim2.new(1, 0, 0, code.Size.Y.Offset),
-				LayoutOrder = 2,
-				Parent = body,
-			})
-			code.AnchorPoint = Vector2.new(0.5, 0)
-			code.Position = UDim2.fromScale(0.5, 0)
-			code.Parent = holder
-		end
-		label(theme, {
-			Text = (link:gsub("^https?://", "")),
-			TextSize = 13,
-			Color = "Muted",
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Size = UDim2.new(1, 0, 0, 16),
+			TextColor3 = ink,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Size = UDim2.new(1, 0, 0, 22),
 			LayoutOrder = 3,
 			Parent = body,
 		})
+		local subtitle = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "",
+			FontFace = Fonts.Regular,
+			TextSize = 13,
+			TextColor3 = ink,
+			TextTransparency = 0.3,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Size = UDim2.new(1, 0, 0, 16),
+			LayoutOrder = 4,
+			Parent = body,
+		})
 
-		local row = create("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, LayoutOrder = 4, Parent = body })
-		local close = modalButton(theme, row, "Close", "ghost")
-		local copy = modalButton(theme, row, opts.Action or "Copy link", "primary")
+		local row = create("Frame", { Size = UDim2.new(1, 0, 0, 42), BackgroundTransparency = 1, LayoutOrder = 5, Parent = body })
+		local function pill(text, filled)
+			local button = create("TextButton", {
+				Text = text,
+				FontFace = Fonts.Medium,
+				TextSize = 14,
+				TextColor3 = filled and WHITE or ink,
+				AutoButtonColor = false,
+				BackgroundColor3 = filled and ink or WHITE,
+				BackgroundTransparency = filled and 0 or 0.45,
+				BorderSizePixel = 0,
+				Size = UDim2.new(0.5, -4, 1, 0),
+				Parent = row,
+				corner(13),
+			})
+			pressable(button, 0.97)
+			return button
+		end
+		local close = pill("Close", false)
+		local copy = pill(opts.Action or "Copy link", true)
 		copy.Position = UDim2.new(0.5, 4, 0, 0)
-		close.MouseButton1Click:Connect(shell.Close)
+		close.MouseButton1Click:Connect(function()
+			shell.Close()
+		end)
 		copy.MouseButton1Click:Connect(function()
 			self:Copy(link, "Link")
 		end)
@@ -9266,14 +9407,16 @@ do
 			end
 			if fields.Title then
 				title.Text = fields.Title
-				initial.Text = fields.Title:match(utf8.charpattern) or ""
+				initial.Text = (fields.Title:match(utf8.charpattern) or ""):upper()
 			end
 			if fields.Subtitle then
 				subtitle.Text = fields.Subtitle
 			end
+			if fields.Handle then
+				handle.Text = fields.Handle
+			end
 			if fields.Image and fields.Image ~= "" then
 				avatar.Image = fields.Image
-				avatar.BackgroundTransparency = 1
 				initial.Visible = false
 			end
 		end
