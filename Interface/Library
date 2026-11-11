@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.0.0" }
+local Isle = { Version = "5.1.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -6672,7 +6672,7 @@ function Page:Board(opts)
 			corner(16),
 		})
 		theme:Bind(frame, { BackgroundColor3 = "Elevated" })
-		local scale = create("UIScale", { Scale = history.Busy and 1 or 0.9, Parent = frame })
+		local scale = create("UIScale", { Scale = (history.Busy and not history.Pop) and 1 or 0.9, Parent = frame })
 		local stroke = create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = frame })
 		theme:Bind(stroke, { Color = "StrokeColor", Transparency = "StrokeT" })
 		local shadow = newShadow(frame, {
@@ -7213,17 +7213,87 @@ function Page:Board(opts)
 	end
 
 	local afterRestore
+	-- applies a snapshot as a diff so surviving nodes glide to their old places instead of being rebuilt
 	local function restore(data)
 		history.Busy = true
-		local keepPan, keepZoom = targetPan, targetZoom
-		loadAll(deepCopy(data))
-		targetPan, targetZoom = keepPan, keepZoom
-		pan, zoom = keepPan, keepZoom
-		applyView()
-		refreshEdges()
+		history.Pop = true
+		data = deepCopy(data)
+		local wanted = {}
+		for _, item in ipairs(data.nodes or {}) do
+			wanted[item.Id] = item
+		end
+		for id, node in pairs(table.clone(nodes)) do
+			if not wanted[id] then
+				if selected == node then
+					canvas.Deselect()
+				end
+				for _, edge in pairs(table.clone(edges)) do
+					if edge.From == id or edge.To == id then
+						destroyEdge(edge)
+					end
+				end
+				nodes[id] = nil
+				arranging[node] = nil
+				local frame = node.Frame
+				tween(node.Scale, Ease.Hover, { Scale = 0.85 })
+				task.delay(0.15, function()
+					frame:Destroy()
+				end)
+			end
+		end
+		for id, item in pairs(wanted) do
+			local node = nodes[id]
+			if node then
+				node.Type = item.Type
+				node.Fields = item.Fields or {}
+				node.Comments = item.Comments or {}
+				node.Created = item.Created
+				renderNode(node)
+				local x, y = item.X or node.X, item.Y or node.Y
+				if node.TX or math.abs(node.X - x) > 0.5 or math.abs(node.Y - y) > 0.5 then
+					node.TX, node.TY = x, y
+					arranging[node] = true
+				end
+			else
+				makeNode(item)
+			end
+		end
+		local wantedEdges = {}
+		for index, item in ipairs(data.edges or {}) do
+			item.Id = item.Id or ("e" .. index)
+			wantedEdges[item.Id] = item
+		end
+		for id, edge in pairs(table.clone(edges)) do
+			local item = wantedEdges[id]
+			if not item or item.From ~= edge.From or item.To ~= edge.To then
+				if selectedEdge == edge then
+					canvas.Deselect()
+				end
+				destroyEdge(edge)
+				placePair(edge.From, edge.To)
+			end
+		end
+		for id, item in pairs(wantedEdges) do
+			local edge = edges[id]
+			if edge then
+				edge.Label, edge.Source, edge.Proof, edge.Time = item.Label, item.Source, item.Proof, item.Time
+				renderChip(edge)
+				placePair(edge.From, edge.To)
+			else
+				canvas.AddEdge(item.From, item.To, item.Label, id, item)
+			end
+		end
+		subjectId = (data.subject ~= nil and nodes[data.subject] ~= nil) and data.subject or nil
+		subjectDirty = true
+		history.Pop = false
 		history.Busy = false
 		if afterRestore then
 			afterRestore()
+		end
+		if selected and opts.OnSelect then
+			fire(opts.OnSelect, selected)
+		elseif selectedEdge and opts.OnEdge then
+			fire(opts.OnEdge, selectedEdge)
 		end
 		if opts.OnChange then
 			fire(opts.OnChange)
