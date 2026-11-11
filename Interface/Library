@@ -5,13 +5,14 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.5.1" }
+local Isle = { Version = "5.5.2" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
 Isle.IconUrl = ""
 Isle.SmoothPaths = false
 Isle.Shadows = true
+Isle.Trace = false
 local GRAIN_STRENGTH = 0.5
 
 local FONT = "rbxasset://fonts/families/BuilderSans.json"
@@ -5675,6 +5676,15 @@ function Page:Report(opts)
 		clearDetails()
 		data = data or {}
 		local tone = data.Tone or "Accent"
+		-- with Isle.Trace the report is built in slow steps, so a frozen frame points at one of them
+		local function stage(name)
+			if Isle.Trace then
+				print("[Isle] report stage done: " .. name)
+				task.wait(1.5)
+			end
+		end
+		stage("cleared")
+		details.Visible = Isle.Trace == true
 
 		tag.Text = data.Tag or ""
 		theme:Set(tag, "TextColor3", tone)
@@ -5708,6 +5718,7 @@ function Page:Report(opts)
 
 		setBadge(({ Safe = "check", Danger = "alert", Warning = "alert" })[tone], tone)
 		setBloom(tone, 0.75)
+		stage("header")
 
 		local order = 0
 		local function nextOrder()
@@ -5800,6 +5811,8 @@ function Page:Report(opts)
 			end
 		end
 
+		stage("meter")
+
 		if data.Chips and #data.Chips > 0 then
 			begin()
 			heading(data.ChipsTitle or "Exposed data")
@@ -5838,6 +5851,8 @@ function Page:Report(opts)
 				reveal(chipLabel, 0.1 + math.min(i, 10) * 0.02)
 			end
 		end
+
+		stage("chips")
 
 		local groups = {}
 		if data.Rows and #data.Rows > 0 then
@@ -5905,6 +5920,8 @@ function Page:Report(opts)
 			end
 		end
 
+		stage("rows")
+
 		if data.Tips and #data.Tips > 0 then
 			begin()
 			heading(data.TipsTitle or "What to do")
@@ -5940,6 +5957,8 @@ function Page:Report(opts)
 				reveal(tipLabel, 0.15 + i * 0.04)
 			end
 		end
+
+		stage("tips")
 
 		if data.Actions and #data.Actions > 0 then
 			begin()
@@ -5984,8 +6003,11 @@ function Page:Report(opts)
 			end
 		end
 
+		stage("actions")
+
 		details.Visible = order > 0
 		setFooter(data.Footer)
+		stage("footer")
 	end
 
 	obj:SetEmpty()
