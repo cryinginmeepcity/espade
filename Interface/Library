@@ -5,14 +5,13 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.5.2" }
+local Isle = { Version = "5.6.1" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
 Isle.IconUrl = ""
 Isle.SmoothPaths = false
 Isle.Shadows = true
-Isle.Trace = false
 local GRAIN_STRENGTH = 0.5
 
 local FONT = "rbxasset://fonts/families/BuilderSans.json"
@@ -544,6 +543,16 @@ local function ensureFolder(path)
 end
 
 local function httpFetch(url)
+	-- some executors stall the game after their own request function, so the engine call goes first
+	local okGet, got = pcall(function()
+		return game:HttpGetAsync(url)
+	end)
+	if okGet and type(got) == "string" then
+		return got
+	end
+	if not okGet and tostring(got):find("HTTP %d") then
+		return nil
+	end
 	local req = (syn and syn.request) or (http and http.request) or http_request or request
 	if type(req) == "function" then
 		local ok, res = pcall(req, { Url = url, Method = "GET" })
@@ -2442,7 +2451,6 @@ function Isle.new(options)
 	local indicatorVel, indicatorSizeVel = Vector2.zero, Vector2.zero
 
 	window:_connect(RunService.RenderStepped, function(dt)
-		local loopStart = os.clock()
 		dt = math.min(dt, 0.1)
 		local target = window.Visible and 1 or 0
 		if math.abs(window._vis - target) > 0.001 then
@@ -2626,9 +2634,6 @@ function Isle.new(options)
 
 		for _, step in ipairs(window._steppers) do
 			step(dt, s)
-		end
-		if os.clock() - loopStart > 0.05 then
-			print(string.format("[Isle] frame loop took %.2fs", os.clock() - loopStart))
 		end
 	end)
 
@@ -5676,15 +5681,6 @@ function Page:Report(opts)
 		clearDetails()
 		data = data or {}
 		local tone = data.Tone or "Accent"
-		-- with Isle.Trace the report is built in slow steps, so a frozen frame points at one of them
-		local function stage(name)
-			if Isle.Trace then
-				print("[Isle] report stage done: " .. name)
-				task.wait(1.5)
-			end
-		end
-		stage("cleared")
-		details.Visible = Isle.Trace == true
 
 		tag.Text = data.Tag or ""
 		theme:Set(tag, "TextColor3", tone)
@@ -5718,8 +5714,6 @@ function Page:Report(opts)
 
 		setBadge(({ Safe = "check", Danger = "alert", Warning = "alert" })[tone], tone)
 		setBloom(tone, 0.75)
-		stage("header")
-
 		local order = 0
 		local function nextOrder()
 			order += 1
@@ -5811,8 +5805,6 @@ function Page:Report(opts)
 			end
 		end
 
-		stage("meter")
-
 		if data.Chips and #data.Chips > 0 then
 			begin()
 			heading(data.ChipsTitle or "Exposed data")
@@ -5851,8 +5843,6 @@ function Page:Report(opts)
 				reveal(chipLabel, 0.1 + math.min(i, 10) * 0.02)
 			end
 		end
-
-		stage("chips")
 
 		local groups = {}
 		if data.Rows and #data.Rows > 0 then
@@ -5920,8 +5910,6 @@ function Page:Report(opts)
 			end
 		end
 
-		stage("rows")
-
 		if data.Tips and #data.Tips > 0 then
 			begin()
 			heading(data.TipsTitle or "What to do")
@@ -5957,8 +5945,6 @@ function Page:Report(opts)
 				reveal(tipLabel, 0.15 + i * 0.04)
 			end
 		end
-
-		stage("tips")
 
 		if data.Actions and #data.Actions > 0 then
 			begin()
@@ -6003,11 +5989,8 @@ function Page:Report(opts)
 			end
 		end
 
-		stage("actions")
-
 		details.Visible = order > 0
 		setFooter(data.Footer)
-		stage("footer")
 	end
 
 	obj:SetEmpty()
