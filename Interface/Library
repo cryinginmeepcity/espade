@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.6.1" }
+local Isle = { Version = "5.7.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -5550,8 +5550,28 @@ function Page:Report(opts)
 		pad(0, 6, 0, 6),
 	})
 
+	local track = create("Frame", {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 22, 1, -15),
+		Size = UDim2.new(1, -44, 0, 3),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Parent = hero,
+		round(),
+	})
+	theme:Bind(track, { BackgroundColor3 = "FieldColor" })
+	local trackFill = create("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Parent = track,
+		round(),
+	})
+	theme:Bind(trackFill, { BackgroundColor3 = "Accent" })
+
 	local motion = {}
 	local counter
+	local progress
 	local obj = {}
 
 	local function stopMotion()
@@ -5562,6 +5582,12 @@ function Page:Report(opts)
 		if counter then
 			counter:Disconnect()
 			counter = nil
+		end
+		if progress then
+			progress.Ticker:Disconnect()
+			progress = nil
+			tween(track, Ease.Hover, { BackgroundTransparency = 1 })
+			tween(trackFill, Ease.Hover, { BackgroundTransparency = 1 })
 		end
 	end
 
@@ -5673,6 +5699,57 @@ function Page:Report(opts)
 		setBloom("Accent", 0.5)
 		if bloomShadow then
 			table.insert(motion, tween(bloomShadow, Ease.Pulse, { Transparency = 0.85 }))
+		end
+	end
+
+	-- Value and Next are 0..1: the bar jumps to Value, then creeps towards Next over Duration seconds
+	function obj:SetProgress(info)
+		info = info or {}
+		if not progress then
+			stopMotion()
+			bigValue(true)
+			theme:Set(value, "TextColor3", "Text")
+			value.TextTransparency = 0
+			trackFill.Size = UDim2.fromScale(0, 1)
+			tween(track, Ease.Hover, { BackgroundTransparency = theme:Get("FieldT") })
+			tween(trackFill, Ease.Hover, { BackgroundTransparency = 0 })
+			local live = { Shown = 0, Note = "" }
+			progress = live
+			live.Ticker = RunService.RenderStepped:Connect(function(dt)
+				if not value.Parent then
+					live.Ticker:Disconnect()
+					return
+				end
+				local elapsed = os.clock() - live.Start
+				local glide = live.Time > 0 and math.min(1, elapsed / live.Time) or 1
+				local target = live.From + (live.To - live.From) * 0.92 * glide
+				live.Shown = math.max(live.Shown, live.Shown + (target - live.Shown) * damp(8, dt))
+				trackFill.Size = UDim2.fromScale(math.clamp(live.Shown, 0, 1), 1)
+				local percent = math.floor(live.Shown * 100 + 0.5) .. "%"
+				if value.Text ~= percent then
+					value.Text = percent
+				end
+				local left = live.Left and math.max(0, live.Left - elapsed)
+				local eta = left and (left >= 1.5 and ("about " .. math.ceil(left) .. "s left") or "almost done") or ""
+				local note = live.Step
+				if eta ~= "" then
+					note = note ~= "" and (note .. " · " .. eta) or eta
+				end
+				if note ~= live.Note then
+					live.Note = note
+					hint.Text = note
+				end
+			end)
+		end
+		progress.From = math.clamp(info.Value or 0, 0, 1)
+		progress.To = math.clamp(info.Next or progress.From, progress.From, 1)
+		progress.Time = info.Duration or 0
+		progress.Start = os.clock()
+		progress.Left = info.Left
+		progress.Step = info.Step or ""
+		if info.Stage then
+			caption.Text = info.Stage
+			reveal(caption, 0, Ease.Hover)
 		end
 	end
 
