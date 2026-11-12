@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 
-local Isle = { Version = "5.10.0" }
+local Isle = { Version = "5.11.0" }
 Isle.GrainId = "rbxassetid://0"
 Isle.Icons = {}
 Isle.IconFolder = "isle/icons"
@@ -9259,69 +9259,115 @@ do
 		end)
 	end
 
-	-- a share card: avatar over a white tile with a styled QR code, on a gradient backdrop
+	-- a full window share screen: avatar over a white sheet with a styled QR code, on a gradient
 	-- opts: Title, Subtitle, Handle, Image, Link, Qr, Icon, IconFallback, Colors, Backdrop, Ink
 	function Window:LinkCard(opts)
 		opts = opts or {}
 		local theme = self.Theme
 		local link = tostring(opts.Link or "")
-		local colors = opts.Colors or { Color3.fromRGB(15, 157, 88), Color3.fromRGB(110, 158, 18) }
-		local backdropColors = opts.Backdrop or { Color3.fromRGB(96, 201, 138), Color3.fromRGB(240, 226, 120) }
-		local ink = opts.Ink or Color3.fromRGB(16, 48, 31)
-		local shell = modalShell(self, opts, 320)
-		local body = shell.Body
-		self._modalHeight = 540
+		local colors = opts.Colors or { Color3.fromRGB(46, 160, 96), Color3.fromRGB(150, 172, 40) }
+		local wash = opts.Backdrop or { Color3.fromRGB(134, 190, 142), Color3.fromRGB(222, 216, 138), Color3.fromRGB(150, 196, 150) }
+		local ink = opts.Ink or Color3.fromRGB(22, 52, 34)
+		local closed = false
+		self._modals += 1
+		self._modalHeight = 520
+		self:CloseMenu()
 
-		local backdrop = create("Frame", {
+		local cover = create("CanvasGroup", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundColor3 = WHITE,
-			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			ZIndex = 91,
-			Parent = shell.Panel,
-			corner(22),
-			create("UIGradient", { Color = ColorSequence.new(backdropColors[1], backdropColors[2]), Rotation = 55 }),
+			GroupTransparency = 1,
+			ZIndex = 90,
+			Parent = self.Card,
+			corner(RADIUS),
+			create("UIGradient", {
+				Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, wash[1]),
+					ColorSequenceKeypoint.new(0.5, wash[2]),
+					ColorSequenceKeypoint.new(1, wash[3] or wash[1]),
+				}),
+				Rotation = 35,
+			}),
 		})
-		tween(backdrop, Ease.Hover, { BackgroundTransparency = 0 })
-		local closeShell = shell.Close
-		function shell.Close()
-			tween(backdrop, Ease.Hover, { BackgroundTransparency = 1 })
-			closeShell()
-		end
+		-- swallows clicks so the page under the screen stays untouched
+		create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Parent = cover,
+		})
 
-		create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = 1, Parent = body })
+		local back = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			Position = UDim2.fromOffset(16, 16),
+			Size = UDim2.fromOffset(36, 36),
+			BackgroundColor3 = ink,
+			BackgroundTransparency = 0.78,
+			BorderSizePixel = 0,
+			ZIndex = 3,
+			Parent = cover,
+			round(),
+		})
+		newIcon(theme, back, "chevron-left", "Text", 18, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, -1, 0.5, 0),
+		}):SetColor(WHITE)
+		pressable(back, 0.92)
 
-		local code, slot = Isle.QrFrame(opts.Qr or link, 216, { From = colors[1], To = colors[2], Rounded = true, Hole = true })
-		local codeSide = code and code.Size.Y.Offset or 0
-		local sheet = create("Frame", {
+		local code, slot = Isle.QrFrame(opts.Qr or link, 204, { From = colors[1], To = colors[2], Rounded = true, Hole = true })
+		local codeSide = code and code.Size.Y.Offset or 160
+		local sheetWidth, sheetHeight = codeSide + 40, 38 + codeSide + 48
+		local column = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 4),
+			Size = UDim2.fromOffset(sheetWidth + 40, 32 + sheetHeight + 58),
+			BackgroundTransparency = 1,
+			ZIndex = 2,
+			Parent = cover,
+		})
+		local columnScale = create("UIScale", { Scale = 0.95, Parent = column })
+
+		local sheet = create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 32),
+			Size = UDim2.fromOffset(sheetWidth, sheetHeight),
 			BackgroundColor3 = WHITE,
 			BorderSizePixel = 0,
-			Size = UDim2.new(1, 0, 0, 36 + codeSide + 44),
-			LayoutOrder = 2,
-			Parent = body,
-			corner(20),
+			Parent = column,
+			corner(22),
+		})
+		newShadow(sheet, {
+			BlurRadius = UDim.new(0, 36),
+			Offset = UDim2.fromOffset(0, 12),
+			Color = ink,
+			Transparency = 0.82,
+			ShowBehindParent = false,
 		})
 		if code then
 			code.AnchorPoint = Vector2.new(0.5, 0)
-			code.Position = UDim2.new(0.5, 0, 0, 36)
+			code.Position = UDim2.new(0.5, 0, 0, 38)
 			code.BackgroundTransparency = 1
 			code.Parent = sheet
 		end
 		if slot then
-			local mark = newIcon(theme, slot, opts.Icon or "link", "Text", math.floor(slot.Size.X.Offset * 0.56), {
+			newIcon(theme, slot, opts.Icon or "link", "Text", math.floor(slot.Size.X.Offset * 0.56), {
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromScale(0.5, 0.5),
-			}, opts.IconFallback)
-			mark:SetColor(WHITE)
+			}, opts.IconFallback):SetColor(WHITE)
 		end
 		local handle = create("TextLabel", {
 			BackgroundTransparency = 1,
 			Text = "",
 			FontFace = Fonts.SemiBold,
-			TextSize = 20,
+			TextSize = 19,
 			TextColor3 = WHITE,
 			AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.new(0, 0, 1, -14),
+			Position = UDim2.new(0, 0, 1, -16),
 			Size = UDim2.new(1, 0, 0, 24),
 			Parent = sheet,
 			create("UIGradient", { Color = ColorSequence.new(colors[1], colors[2]) }),
@@ -9336,7 +9382,6 @@ do
 			ScaleType = Enum.ScaleType.Crop,
 			Parent = sheet,
 			round(),
-			create("UIStroke", { Color = WHITE, Thickness = 3 }),
 		})
 		local initial = create("TextLabel", {
 			BackgroundTransparency = 1,
@@ -9352,12 +9397,12 @@ do
 			BackgroundTransparency = 1,
 			Text = "",
 			FontFace = Fonts.SemiBold,
-			TextSize = 17,
+			TextSize = 16,
 			TextColor3 = ink,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-			Size = UDim2.new(1, 0, 0, 22),
-			LayoutOrder = 3,
-			Parent = body,
+			Position = UDim2.fromOffset(0, 32 + sheetHeight + 16),
+			Size = UDim2.new(1, 0, 0, 20),
+			Parent = column,
 		})
 		local subtitle = create("TextLabel", {
 			BackgroundTransparency = 1,
@@ -9367,42 +9412,36 @@ do
 			TextColor3 = ink,
 			TextTransparency = 0.3,
 			TextTruncate = Enum.TextTruncate.AtEnd,
+			Position = UDim2.fromOffset(0, 32 + sheetHeight + 38),
 			Size = UDim2.new(1, 0, 0, 16),
-			LayoutOrder = 4,
-			Parent = body,
+			Parent = column,
 		})
 
-		local row = create("Frame", { Size = UDim2.new(1, 0, 0, 42), BackgroundTransparency = 1, LayoutOrder = 5, Parent = body })
-		local function pill(text, filled)
-			local button = create("TextButton", {
-				Text = text,
-				FontFace = Fonts.Medium,
-				TextSize = 14,
-				TextColor3 = filled and WHITE or ink,
-				AutoButtonColor = false,
-				BackgroundColor3 = filled and ink or WHITE,
-				BackgroundTransparency = filled and 0 or 0.45,
-				BorderSizePixel = 0,
-				Size = UDim2.new(0.5, -4, 1, 0),
-				Parent = row,
-				corner(13),
-			})
-			pressable(button, 0.97)
-			return button
-		end
-		local close = pill("Close", false)
-		local copy = pill(opts.Action or "Copy link", true)
-		copy.Position = UDim2.new(0.5, 4, 0, 0)
-		close.MouseButton1Click:Connect(function()
-			shell.Close()
-		end)
-		copy.MouseButton1Click:Connect(function()
-			self:Copy(link, "Link")
-		end)
+		tween(cover, Ease.Hover, { GroupTransparency = 0 })
+		tween(columnScale, Ease.Smooth, { Scale = 1 })
 
 		local card = {}
+		function card:Close()
+			if closed then
+				return
+			end
+			closed = true
+			local window = self.Window
+			window._modals = math.max(0, window._modals - 1)
+			if window._modals == 0 then
+				window._modalHeight = nil
+			end
+			tween(columnScale, Ease.Hover, { Scale = 0.97 })
+			tween(cover, Ease.Hover, { GroupTransparency = 1 })
+			task.delay(0.25, function()
+				cover:Destroy()
+			end)
+		end
+		function card:IsOpen()
+			return not closed
+		end
 		function card:Set(fields)
-			if shell.Closed then
+			if closed then
 				return
 			end
 			if fields.Title then
@@ -9420,12 +9459,13 @@ do
 				initial.Visible = false
 			end
 		end
-		function card:Close()
-			shell.Close()
-		end
-		function card:IsOpen()
-			return not shell.Closed
-		end
+		card.Window = self
+		back.MouseButton1Click:Connect(function()
+			card:Close()
+		end)
+		sheet.MouseButton1Click:Connect(function()
+			self:Copy(link, "Link")
+		end)
 		card:Set(opts)
 		return card
 	end
